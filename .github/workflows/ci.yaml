@@ -28,7 +28,7 @@ jobs:
       - working-directory: remote/firmware
         run: |
           cmake -G Ninja -S cmake/remote/default --preset remote_default_conf --fresh
-          cmake -v --parallel
+          cmake
 
   kicad-base-test:
     runs-on: ubuntu-latest

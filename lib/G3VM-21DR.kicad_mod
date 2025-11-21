@@ -1,20 +1,129 @@
-
-(footprint G3VM-21DR (layer F.Cu) (tedit 691F76E9)
-  (descr "")
-  (attr smd)
-  (fp_text reference REF** (at -3.81 0.0 900) (layer F.SilkS)
-    (effects (font (size 1.0 1.0) (thickness 0.15)))
-  )
-  (fp_text value G3VM-21DR (at 3.81 -2.54 900) (layer F.Fab)
-    (effects (font (size 1.0 1.0) (thickness 0.15)))
-  )
-  (pad 1 smd rect (at -1.27 4.25) (size 1.5 1.3) (layers F.Cu F.Mask F.Paste) (solder_mask_margin 0.102))
-  (pad 2 smd rect (at 1.27 4.25) (size 1.5 1.3) (layers F.Cu F.Mask F.Paste) (solder_mask_margin 0.102))
-  (pad 3 smd rect (at 1.27 -4.25) (size 1.5 1.3) (layers F.Cu F.Mask F.Paste) (solder_mask_margin 0.102))
-  (pad 4 smd rect (at -1.27 -4.25) (size 1.5 1.3) (layers F.Cu F.Mask F.Paste) (solder_mask_margin 0.102))
-  (fp_line (start -2.3 -3.2) (end 2.3 -3.2) (layer F.SilkS) (width 0.1524))
-  (fp_line (start 2.3 -3.2) (end 2.3 3.2) (layer F.SilkS) (width 0.1524))
-  (fp_line (start 2.3 3.2) (end -2.3 3.2) (layer F.SilkS) (width 0.1524))
-  (fp_line (start -2.3 3.2) (end -2.3 -3.2) (layer F.SilkS) (width 0.1524))
-  (fp_circle (center -2.8575 3.81) (end -2.54 3.81) (layer Dwgs.User) (width 0.1524))
+(footprint "G3VM-21DR"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(property "Reference" "REF**"
+		(at -3.81 0 180)
+		(layer "F.SilkS")
+		(uuid "ca8d3343-195e-471c-87ea-280b67df45ab")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "G3VM-21DR"
+		(at 3.81 -2.54 180)
+		(layer "F.Fab")
+		(uuid "059ac075-2958-45be-82a7-67fe1460e26a")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "0350ecd7-5e4b-4ffa-aef6-83a83e775cd6")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "3b8bd696-e6e5-44fa-89b6-eaa4073dea81")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_line
+		(start -2.3 -3.2)
+		(end 2.3 -3.2)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "01ddc3fa-e92a-477b-a500-fa9bc750481c")
+	)
+	(fp_line
+		(start -2.3 3.2)
+		(end -2.3 -3.2)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "0c8f50cc-89b0-46ed-a6d9-81cc42233aff")
+	)
+	(fp_line
+		(start 2.3 -3.2)
+		(end 2.3 3.2)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "918fc0aa-dfad-4837-8053-b93f16a18758")
+	)
+	(fp_line
+		(start 2.3 3.2)
+		(end -2.3 3.2)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "1163d26c-b0f8-4832-8472-e36c6ff842a9")
+	)
+	(fp_circle
+		(center -2.8575 3.81)
+		(end -2.54 3.81)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill no)
+		(layer "Dwgs.User")
+		(uuid "2e01336e-aa9c-4c97-8e3c-fc79fb82a581")
+	)
+	(pad "1" smd rect
+		(at -1.27 4.25)
+		(size 1.5 1.3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "a03be32d-05d6-4fe2-b48b-31329a12c625")
+	)
+	(pad "2" smd rect
+		(at 1.27 4.25)
+		(size 1.5 1.3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "453898b8-ed80-4b87-a4cf-40f87b8f73b3")
+	)
+	(pad "3" smd rect
+		(at 1.27 -4.25)
+		(size 1.5 1.3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "a24b8ea8-adcd-475c-aba9-f1f71c19e2ab")
+	)
+	(pad "4" smd rect
+		(at -1.27 -4.25)
+		(size 1.5 1.3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "66a669f3-39a1-44f6-8b9d-e3f0248efc05")
+	)
+	(embedded_fonts no)
 )
