@@ -10,50 +10,52 @@ jobs:
   build-remote-firmware:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-    - uses: jwlawson/actions-setup-cmake@v2
-      with:
-        cmake-version: '3.28.x'
+      - uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.28.x'
 
-    - run: |
-        sudo dpkg --add-architecture i386
-        sudo apt-get update
-        sudo apt-get install -y libc6:i386 libx11-6:i386 libxext6:i386 libstdc++6:i386 libexpat1:i386 wget sudo make
-        wget -nv -O /tmp/xc8 "https://ww1.microchip.com/downloads/aemDocuments/documents/DEV/ProductDocuments/SoftwareTools/xc8-v${XC8_VERSION}-full-install-linux-x64-installer.run"
-        chmod +x /tmp/xc8
-        sudo /tmp/xc8 --mode unattended --unattendedmodeui none --netservername localhost --LicenseType FreeMode --prefix "/opt/microchip/xc8/v${XC8_VERSION}"
-        rm /tmp/xc8
+      - run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y libc6:i386 libx11-6:i386 libxext6:i386 libstdc++6:i386 libexpat1:i386 wget sudo make
+          wget -nv -O /tmp/xc8 "https://ww1.microchip.com/downloads/aemDocuments/documents/DEV/ProductDocuments/SoftwareTools/xc8-v${XC8_VERSION}-full-install-linux-x64-installer.run"
+          chmod +x /tmp/xc8
+          sudo /tmp/xc8 --mode unattended --unattendedmodeui none --netservername localhost --LicenseType FreeMode --prefix "/opt/microchip/xc8/v${XC8_VERSION}"
+          rm /tmp/xc8
 
-    - working-directory: remote/firmware
-      run: |
-        cmake -G Ninja -S cmake/remote/default --preset remote_default_conf --fresh
-        cmake -v --parallel
+      - working-directory: remote/firmware
+        run: |
+          cmake -G Ninja -S cmake/remote/default --preset remote_default_conf --fresh
+          cmake -v --parallel
 
   kicad-base-test:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+
       - uses: sparkengineering/kicad-action@v4
-        working-directory: base
         with:
-          kicad_sch: esphome-rf-doorbell.kicad_sch
+          kicad_sch: base/esphome-rf-doorbell.kicad_sch
           sch_pdf: true
           sch_bom: true
           sch_erc: true
           pcb_drc: true
-          kicad_pcb: esphome-rf-doorbell.kicad_pcb
+          kicad_pcb: base/esphome-rf-doorbell.kicad_pcb
           pcb_gerbers: true  
 
   kicad-remote-test:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+
       - uses: sparkengineering/kicad-action@v4
-        working-directory: remote
         with:
-          kicad_sch: remote.kicad_sch
+          kicad_sch: remote/remote.kicad_sch
           sch_pdf: true
           sch_bom: true
           sch_erc: true
           pcb_drc: true
-          kicad_pcb: remote.kicad_pcb
+          kicad_pcb: remote/remote.kicad_pcb
           pcb_gerbers: true  
