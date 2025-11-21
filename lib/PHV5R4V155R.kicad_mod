@@ -1,0 +1,166 @@
+(footprint "PHV5R4V155R"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "17.3 X 9 X 22mm")
+	(tags "Capacitor Polarised")
+	(property "Reference" "C**"
+		(at -5.9 0 0)
+		(layer "F.SilkS")
+		(uuid "4b8efd09-07ad-4ec2-943b-036ece8d9a6d")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+			)
+		)
+	)
+	(property "Value" "PHV5R4V155R"
+		(at -5.9 0 0)
+		(layer "F.SilkS")
+		(hide yes)
+		(uuid "cb752b69-f3bf-4d3f-aff1-150cdbe6b6e8")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "90939758-ad66-4e4c-a02e-cc14d17cde8e")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "2fc45e31-dcf2-40b2-872e-7256bb4ab47b")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
+	(fp_line
+		(start -14.7 -23.5)
+		(end -6 -23.5)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "ff4dfa0c-d42e-4936-997d-620fb2f34976")
+	)
+	(fp_line
+		(start -14.7 1)
+		(end -14.7 -23.5)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "ba9aeafd-2695-45c0-8243-0031bffada55")
+	)
+	(fp_line
+		(start -14.7 1)
+		(end -6 1)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "5f3e7321-f905-485d-a36c-236708cace85")
+	)
+	(fp_line
+		(start -6 -23.5)
+		(end 2.7 -23.5)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "9bdd326b-5aff-498a-b3a7-ddc4b4fedc37")
+	)
+	(fp_line
+		(start -6 1)
+		(end 2.7 1)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "a6b7ec43-2da8-49e3-8b62-a3cb9d482074")
+	)
+	(fp_line
+		(start 2.7 1)
+		(end 2.7 -23.5)
+		(stroke
+			(width 0.2)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "5ac01f02-9728-42e2-9045-31510a35ec3d")
+	)
+	(fp_rect
+		(start -15.2 -24.2)
+		(end 3.4 1.4)
+		(stroke
+			(width 0.05)
+			(type default)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "a6307e99-934e-45fc-9b4e-7bcad3c3bb6a")
+	)
+	(fp_text user "${REFERENCE}"
+		(at -5.9 0 0)
+		(layer "F.Fab")
+		(uuid "95bc08c0-ca5e-4deb-9fef-745eb0d886c5")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.254)
+			)
+		)
+	)
+	(pad "1" thru_hole rect
+		(at 0 0)
+		(size 1.2 1.2)
+		(drill 0.7)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "3bcf76ef-3f19-4236-8916-cbb95823ec82")
+	)
+	(pad "2" thru_hole circle
+		(at -11.8 0)
+		(size 1.2 1.2)
+		(drill 0.7)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "fba854ea-57a5-431f-8d8f-fd14f4fe3f9b")
+	)
+	(embedded_fonts no)
+	(model "PHV-5R4V155-R.stp"
+		(offset
+			(xyz -5.900000007 0 0.4)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 90 0 -180)
+		)
+	)
+)
