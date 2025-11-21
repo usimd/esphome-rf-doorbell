@@ -1964,7 +1964,7 @@
 				)
 			)
 		)
-		(property "Value" "PIC12LF1501-xMS"
+		(property "Value" "PIC12LF1552"
 			(at 0 2.45 0)
 			(layer "F.Fab")
 			(uuid "fceb5fe6-1bac-43b7-bcf5-3396122035ba")
@@ -1975,7 +1975,7 @@
 				)
 			)
 		)
-		(property "Datasheet" "https://ww1.microchip.com/downloads/en/DeviceDoc/41615A.pdf"
+		(property "Datasheet" "https://ww1.microchip.com/downloads/aemDocuments/documents/OTH/ProductDocuments/DataSheets/40001674F.pdf"
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
