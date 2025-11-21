@@ -1,4 +1,0 @@
-(sym_lib_table
-  (version 7)
-  (lib (name "MP5493GJ-Z")(type "KiCad")(uri "${KIPRJMOD}/lib/MP5493GJ-Z.kicad_sym")(options "")(descr ""))
-)

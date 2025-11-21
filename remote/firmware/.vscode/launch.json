@@ -1,0 +1,20 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "type": "mdb",
+            "request": "launch",
+            "name": "Microchip Debug Adapter",
+            "filePath": "${workspaceFolder}/dist/default/debug/${1:projectName}.debug.elf",
+            "device": "${2:PIC16F18854}",
+            "toolType": "${3:PICKit3}",
+            "toolOptions": {},
+            "stopOnEntry": true,
+            "preLaunchTask": "MPLABX Build"
+        }
+    ]
+}
