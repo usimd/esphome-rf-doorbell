@@ -288,7 +288,16 @@
     "equivalence_files": []
   },
   "erc": {
-    "erc_exclusions": [],
+    "erc_exclusions": [
+      [
+        "lib_symbol_mismatch|482600|1625600|0d097abd-22c4-4c5a-9e34-9f5eedc77b27|00000000-0000-0000-0000-000000000000|||",
+        ""
+      ],
+      [
+        "multiple_net_names|190500|1574800|12d3b0a6-0724-446c-ab45-f1733dd0b938|4b2272fc-b9fe-45a9-bb0e-1e9cdcc81e18|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02",
+        ""
+      ]
+    ],
     "meta": {
       "version": 0
     },
