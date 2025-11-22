@@ -14,24 +14,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.28.x'
-
       - uses: usimd/setup-xc-action@v1
         with:
           compiler: xc8
           version: ${{env.XC8_VERSION}}  
 
-      - working-directory: remote/firmware
+      - name: Run build
+        working-directory: remote/firmware
         run: |
           # Download profile packs to folder
           sudo mkdir -p /${{ env.PACK_FOLDER }}
           sudo chown $USER /${{ env.PACK_FOLDER }}
-          jq -r '.configurations[] | select(.name=="${{ env.PROFILE }}") | .packs[] | ("https://packs.download.microchip.com/" + .vendor + "." + .name + "." + .version + ".atpack" + "\n" + .vendor + "/" + .name + "/" + .version)' .vscode/remote.mplab.json | xargs -n2 sh -c 'curl --create-dirs -LO --output-dir /${{ env.PACK_FOLDER }}/$1 $0 && unzip /${{ env.PACK_FOLDER }}/$1/* -d /${{ env.PACK_FOLDER }}/$1'
+          jq -r '.configurations[] | select(.name=="${{ env.PROFILE }}") | .packs[] | ("https://packs.download.microchip.com/" + .vendor + "." + .name + "." + .version + ".atpack" + "\n" + .vendor + "/" + .name + "/" + .version)' .vscode/remote.mplab.json | xargs -n2 sh -c 'curl --create-dirs -LO --output-dir /${{ env.PACK_FOLDER }}/$1 $0 && unzip -qq /${{ env.PACK_FOLDER }}/$1/* -d /${{ env.PACK_FOLDER }}/$1'
           
           cmake -G Ninja -S cmake/remote/${{ env.PROFILE }} --preset remote_default_conf --fresh -DPACK_REPO_PATH=${{ env.PACK_FOLDER }}
-          cmake --build _build/remote/default -v --parallel -DPACK_REPO_PATH=${{ env.PACK_FOLDER }}
+          cmake --build _build/remote/default -v --parallel
 
   kicad-base-test:
     runs-on: ubuntu-latest
