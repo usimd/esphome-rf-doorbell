@@ -66,6 +66,7 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 CMakeUserPresets.json
+cmake/remote/**/.generated/
 
 # MPLAB
 *.mc3.bak*
