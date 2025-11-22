@@ -23,8 +23,9 @@ jobs:
 
       - working-directory: remote/firmware
         run: |
-          cmake --preset remote_default_conf
-          cmake --build --preset remote_default_conf
+          command -v ninja || sudo apt-get install -y ninja-build
+          cmake -Gninja -S cmake/remote/default --preset remote_default_conf --fresh
+          cmake --build _build/remote/default -v --parallel
 
   kicad-base-test:
     runs-on: ubuntu-latest
