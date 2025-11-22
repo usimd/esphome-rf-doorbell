@@ -5,6 +5,8 @@ on:
 
 env:
   XC8_VERSION: "3.10"
+  PROFILE: "default"
+  PACK_FOLDER: "/opt/microchip/packs"
 
 jobs:
   build-remote-firmware:
@@ -23,9 +25,11 @@ jobs:
 
       - working-directory: remote/firmware
         run: |
-          command -v ninja || sudo apt-get install -y ninja-build
-          cmake -Gninja -S cmake/remote/default --preset remote_default_conf --fresh
-          cmake --build _build/remote/default -v --parallel
+          # Download profile packs to folder
+          jq -r '.configurations[] | select(.name=="${{ env.PROFILE }}") | .packs[] | ("https://packs.download.microchip.com/" + .vendor + "." + .name + "." + .version + ".atpack" + "\n" + .vendor + "/" + .name + "/" + .version)' .vscode/remote.mplab.json | xargs -n2 sh -c 'curl --create-dirs -LO --output-dir /${{ env.PACK_FOLDER }}/$1 $0 && unzip /${{ env.PACK_FOLDER }}/$1/* -d /${{ env.PACK_FOLDER }}/$1'
+          
+          cmake -G Ninja -S cmake/remote/${{ env.PROFILE }} --preset remote_default_conf --fresh -DPACK_REPO_PATH=${{ env.PACK_FOLDER }}
+          cmake --build _build/remote/default -v --parallel -DPACK_REPO_PATH=${{ env.PACK_FOLDER }}
 
   kicad-base-test:
     runs-on: ubuntu-latest
