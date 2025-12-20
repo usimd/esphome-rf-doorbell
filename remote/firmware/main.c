@@ -67,10 +67,6 @@ void ButtonInterrupt(void) {
     state = BUTTON_PRESSED;
 }
 
-
-#define NUMERATOR (int32_t)(1.024 * 1023 * 100) // = 104755
-
-
 int main(void)
 {
     SYSTEM_Initialize();

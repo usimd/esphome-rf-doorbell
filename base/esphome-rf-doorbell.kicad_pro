@@ -48,7 +48,7 @@
         "silk_text_thickness": 0.1,
         "silk_text_upright": false,
         "zones": {
-          "min_clearance": 0.3
+          "min_clearance": 0.0
         }
       },
       "diff_pair_dimensions": [
@@ -60,12 +60,12 @@
       ],
       "drc_exclusions": [
         [
-          "courtyards_overlap|127395000|81151860|4b0355e7-c6ca-4bbd-8990-82af993f949f|dd6d0c29-d611-4d5b-b89d-2d8d03dcad35",
-          ""
+          "items_not_allowed|113900000|113400000|9c357413-03ee-472c-8fb8-e5b0a44fb295|00000000-0000-0000-0000-000000000000",
+          "Only for flashing, not permanently"
         ],
         [
-          "lib_footprint_mismatch|118100000|92000000|4b0355e7-c6ca-4bbd-8990-82af993f949f|00000000-0000-0000-0000-000000000000",
-          ""
+          "items_not_allowed|113900000|116800000|e3dbe958-8ad5-483e-8ec1-dfcf8486fc8f|00000000-0000-0000-0000-000000000000",
+          "Only for flashing, not permanently"
         ],
         [
           "silk_edge_clearance|117400000|121000000|b2e73cb8-b4b7-47cd-b515-3f9330338608|f1efea6a-5d97-49c9-ab40-b8e4cc429a76",
@@ -73,14 +73,6 @@
         ],
         [
           "silk_edge_clearance|133000000|121000000|b2e73cb8-b4b7-47cd-b515-3f9330338608|08fcd229-19da-4432-a1cc-55a3aedda9ab",
-          ""
-        ],
-        [
-          "silk_overlap|160028390|69340000|616c588c-d340-46d0-9dc4-cbdda59cab94|79fd67af-4c28-4c13-8dd3-45a4284a9896",
-          ""
-        ],
-        [
-          "silk_overlap|160043390|69350000|075176e2-143c-4d2b-b12f-08def05495aa|79fd67af-4c28-4c13-8dd3-45a4284a9896",
           ""
         ]
       ],
@@ -302,12 +294,28 @@
   "erc": {
     "erc_exclusions": [
       [
+        "lib_symbol_mismatch|419100|1765300|0d097abd-22c4-4c5a-9e34-9f5eedc77b27|00000000-0000-0000-0000-000000000000|||",
+        ""
+      ],
+      [
         "lib_symbol_mismatch|482600|1625600|0d097abd-22c4-4c5a-9e34-9f5eedc77b27|00000000-0000-0000-0000-000000000000|||",
+        ""
+      ],
+      [
+        "multiple_net_names|152400|1689100|12d3b0a6-0724-446c-ab45-f1733dd0b938|4b2272fc-b9fe-45a9-bb0e-1e9cdcc81e18|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02",
         ""
       ],
       [
         "multiple_net_names|190500|1574800|12d3b0a6-0724-446c-ab45-f1733dd0b938|4b2272fc-b9fe-45a9-bb0e-1e9cdcc81e18|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02",
         ""
+      ],
+      [
+        "pin_to_pin|1422400|939800|c684732c-05fb-4475-8ab4-00333ddafaef|50163525-9499-477f-b0f1-95803c997f9c|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02",
+        "Using +3.3VA just as a label for \"analog\" 3.3V here"
+      ],
+      [
+        "power_pin_not_driven|342900|927100|1c885d56-1ece-486e-b299-b4921bfd2d52|00000000-0000-0000-0000-000000000000|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02|",
+        "Connected to BAT- via Kelvin trace, as suggested in datasheet"
       ]
     ],
     "meta": {
@@ -513,7 +521,7 @@
       "no_connect_dangling": "warning",
       "pin_not_connected": "error",
       "pin_not_driven": "error",
-      "pin_to_pin": "warning",
+      "pin_to_pin": "error",
       "power_pin_not_driven": "error",
       "same_local_global_label": "warning",
       "similar_label_and_power": "warning",
@@ -656,14 +664,50 @@
           "label": "Datasheet",
           "name": "Datasheet",
           "show": true
+        },
+        {
+          "group_by": false,
+          "label": "MPN",
+          "name": "MPN",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Sim.Pin",
+          "name": "Sim.Pin",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Sim.Pins",
+          "name": "Sim.Pins",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "LCSC Part #",
+          "name": "LCSC Part #",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Description",
+          "name": "Description",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "#",
+          "name": "${ITEM_NUMBER}",
+          "show": false
         }
       ],
-      "filter_string": "",
+      "filter_string": "C",
       "group_symbols": true,
       "include_excluded_from_bom": true,
-      "name": "Default Editing",
+      "name": "",
       "sort_asc": true,
-      "sort_field": "Reference"
+      "sort_field": "Footprint"
     },
     "connection_grid_size": 50.0,
     "drawing": {
@@ -712,6 +756,6 @@
     ]
   ],
   "text_variables": {
-    "Revision": "1"
+    "Revision": "3"
   }
 }
