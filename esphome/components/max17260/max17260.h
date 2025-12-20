@@ -34,9 +34,9 @@ class MAX17260Component : public PollingComponent, public i2c::I2CDevice {
 
   void set_voltage_sensor(sensor::Sensor *sensor) { voltage_sensor_ = sensor; }
   void set_current_sensor(sensor::Sensor *sensor) { current_sensor_ = sensor; }
-  void set_soc_sensor(sensor::Sensor *sensor) { soc_sensor_ = sensor; }
-  void set_tte_sensor(sensor::Sensor *sensor) { tte_sensor_ = sensor; }
-  void set_ttf_sensor(sensor::Sensor *sensor) { ttf_sensor_ = sensor; }
+  void set_state_of_charge_sensor(sensor::Sensor *sensor) { soc_sensor_ = sensor; }
+  void set_time_to_empty_sensor(sensor::Sensor *sensor) { tte_sensor_ = sensor; }
+  void set_time_to_full_sensor(sensor::Sensor *sensor) { ttf_sensor_ = sensor; }
   void set_temperature_sensor(sensor::Sensor *sensor) { temperature_sensor_ = sensor; }
 
  protected:
