@@ -8,19 +8,7 @@ namespace bq25628e {
 static const char *const TAG = "bq25628e";
 
 void BQ25628EComponent::setup() {
-  ESP_LOGCONFIG(TAG, "Setting up BQ25628E using Adafruit library...");
-  
-  // Create Adafruit BQ25628E instance
-  this->bq_ = new Adafruit_BQ25628E();
-  
-  // Initialize with I2C address
-  if (!this->bq_->begin(this->address_)) {
-    ESP_LOGE(TAG, "Failed to initialize BQ25628E at address 0x%02X", this->address_);
-    this->mark_failed();
-    return;
-  }
-  
-  ESP_LOGD(TAG, "BQ25628E initialized successfully");
+  ESP_LOGCONFIG(TAG, "Setting up BQ25628E...");
   
   // Configure the charger with initial settings
   if (!this->configure_charger_()) {
@@ -33,7 +21,7 @@ void BQ25628EComponent::setup() {
 }
 
 void BQ25628EComponent::dump_config() {
-  ESP_LOGCONFIG(TAG, "BQ25628E (Adafruit Library):");
+  ESP_LOGCONFIG(TAG, "BQ25628E:");
   LOG_I2C_DEVICE(this);
   LOG_UPDATE_INTERVAL(this);
   
@@ -52,10 +40,6 @@ void BQ25628EComponent::dump_config() {
 }
 
 void BQ25628EComponent::update() {
-  if (this->bq_ == nullptr) {
-    return;
-  }
-  
   // Read ADC values
   if (!this->read_adc_values_()) {
     ESP_LOGW(TAG, "Failed to read ADC values");
@@ -64,79 +48,103 @@ void BQ25628EComponent::update() {
 }
 
 bool BQ25628EComponent::configure_charger_() {
-  if (this->bq_ == nullptr) {
-    return false;
-  }
-  
-  // Set charge current limit (Adafruit library uses Amperes directly)
-  if (!this->bq_->setChargeCurrentLimitA(this->charge_current_limit_)) {
+  // Set charge current limit (datasheet: 50mA to 3000mA, step 50mA)
+  uint8_t ichg_val = (uint8_t)((this->charge_current_limit_ - ICHG_MIN) / ICHG_STEP);
+  if (!this->write_register_byte_(BQ25628E_REG_ICHG_CTRL, ichg_val)) {
     ESP_LOGE(TAG, "Failed to set charge current limit");
     return false;
   }
   ESP_LOGD(TAG, "Charge current limit set to %.2f A", this->charge_current_limit_);
   
-  // Set charge voltage limit (Adafruit library uses Volts directly)
-  if (!this->bq_->setChargeVoltageLimitV(this->charge_voltage_limit_)) {
+  // Set charge voltage limit (datasheet: 3.84V to 4.624V, step 8mV)
+  uint8_t vbat_val = (uint8_t)((this->charge_voltage_limit_ - VBAT_MIN) / VBAT_STEP);
+  if (!this->write_register_byte_(BQ25628E_REG_VBAT_CTRL, vbat_val)) {
     ESP_LOGE(TAG, "Failed to set charge voltage limit");
     return false;
   }
   ESP_LOGD(TAG, "Charge voltage limit set to %.2f V", this->charge_voltage_limit_);
   
-  // Set input current limit (Adafruit library uses Amperes directly)
-  if (!this->bq_->setInputCurrentLimitA(this->input_current_limit_)) {
+  // Set input current limit (datasheet: 100mA to 3200mA, step 100mA)
+  uint8_t iindpm_val = (uint8_t)((this->input_current_limit_ - IINDPM_MIN) / IINDPM_STEP);
+  if (!this->write_register_byte_(BQ25628E_REG_IINDPM_CTRL, iindpm_val)) {
     ESP_LOGE(TAG, "Failed to set input current limit");
     return false;
   }
   ESP_LOGD(TAG, "Input current limit set to %.2f A", this->input_current_limit_);
   
-  // Enable ADC for continuous conversion (inverted logic)
-  this->bq_->setDisableADC(false);
+  // Enable ADC for continuous conversion (bit 7 of ADC_CTRL register)
+  if (!this->write_register_byte_(BQ25628E_REG_ADC_CTRL, 0x80)) {
+    ESP_LOGW(TAG, "Failed to enable ADC");
+  }
+  
+  // Disable no ADC functions (all ADC channels enabled)
+  if (!this->write_register_byte_(BQ25628E_REG_ADC_DIS, 0x00)) {
+    ESP_LOGW(TAG, "Failed to configure ADC channels");
+  }
   
   return true;
 }
 
 bool BQ25628EComponent::read_adc_values_() {
-  if (this->bq_ == nullptr) {
-    return false;
-  }
-  
-  // Read and publish VBUS (bus voltage)
+  // Read and publish VBUS (bus voltage) - datasheet: 1mV per LSB, 16-bit
   if (this->bus_voltage_sensor_ != nullptr) {
-    float vbus = this->bq_->getVBUSvoltage();
-    this->bus_voltage_sensor_->publish_state(vbus);
-    ESP_LOGD(TAG, "VBUS: %.2f V", vbus);
+    uint16_t raw_vbus;
+    if (this->read_register_word_(BQ25628E_REG_VBUS_ADC, raw_vbus)) {
+      float vbus = raw_vbus * VBUS_ADC_STEP;
+      this->bus_voltage_sensor_->publish_state(vbus);
+      ESP_LOGD(TAG, "VBUS: %.2f V", vbus);
+    }
   }
   
-  // Read and publish VBAT (battery voltage)
+  // Read and publish VBAT (battery voltage) - datasheet: 1mV per LSB, 16-bit
   if (this->battery_voltage_sensor_ != nullptr) {
-    float vbat = this->bq_->getVBATvoltage();
-    this->battery_voltage_sensor_->publish_state(vbat);
-    ESP_LOGD(TAG, "VBAT: %.2f V", vbat);
+    uint16_t raw_vbat;
+    if (this->read_register_word_(BQ25628E_REG_VBAT_ADC, raw_vbat)) {
+      float vbat = raw_vbat * VBAT_ADC_STEP;
+      this->battery_voltage_sensor_->publish_state(vbat);
+      ESP_LOGD(TAG, "VBAT: %.2f V", vbat);
+    }
   }
   
-  // Read and publish VSYS (system voltage)
+  // Read and publish VSYS (system voltage) - datasheet: 1mV per LSB, 16-bit
   if (this->system_voltage_sensor_ != nullptr) {
-    float vsys = this->bq_->getVSYSvoltage();
-    this->system_voltage_sensor_->publish_state(vsys);
-    ESP_LOGD(TAG, "VSYS: %.2f V", vsys);
+    uint16_t raw_vsys;
+    if (this->read_register_word_(BQ25628E_REG_VSYS_ADC, raw_vsys)) {
+      float vsys = raw_vsys * VSYS_ADC_STEP;
+      this->system_voltage_sensor_->publish_state(vsys);
+      ESP_LOGD(TAG, "VSYS: %.2f V", vsys);
+    }
   }
   
-  // Read and publish ICHG (charge current)
+  // Read and publish IBAT (charge current) - datasheet: 1mA per LSB, 16-bit, signed
   if (this->charge_current_sensor_ != nullptr) {
-    float ichg = this->bq_->getIBATcurrent();
-    this->charge_current_sensor_->publish_state(ichg);
-    ESP_LOGD(TAG, "ICHG: %.3f A", ichg);
+    uint16_t raw_ibat;
+    if (this->read_register_word_(BQ25628E_REG_IBAT_ADC, raw_ibat)) {
+      // Signed 16-bit value
+      int16_t signed_ibat = (int16_t)raw_ibat;
+      float ibat = signed_ibat * IBAT_ADC_STEP;
+      this->charge_current_sensor_->publish_state(ibat);
+      ESP_LOGD(TAG, "IBAT: %.3f A", ibat);
+    }
   }
   
   return true;
 }
 
 bool BQ25628EComponent::set_charging_enabled(bool enabled) {
-  if (this->bq_ == nullptr) {
+  uint8_t reg_val;
+  if (!this->read_register_byte_(BQ25628E_REG_CHG_CTRL, reg_val)) {
     return false;
   }
   
-  bool success = this->bq_->setEnableCharging(enabled);
+  // Bit 5 of CHG_CTRL register controls charging enable (datasheet: 1 = disable, 0 = enable)
+  if (enabled) {
+    reg_val &= ~(1 << 5);  // Clear bit 5 to enable
+  } else {
+    reg_val |= (1 << 5);   // Set bit 5 to disable
+  }
+  
+  bool success = this->write_register_byte_(BQ25628E_REG_CHG_CTRL, reg_val);
   if (success) {
     ESP_LOGI(TAG, "Charging %s", enabled ? "enabled" : "disabled");
   }
@@ -144,11 +152,13 @@ bool BQ25628EComponent::set_charging_enabled(bool enabled) {
 }
 
 bool BQ25628EComponent::set_charge_current(float current_amps) {
-  if (this->bq_ == nullptr) {
+  if (current_amps < ICHG_MIN || current_amps > ICHG_MAX) {
+    ESP_LOGE(TAG, "Charge current out of range: %.2f A", current_amps);
     return false;
   }
   
-  bool success = this->bq_->setChargeCurrentLimitA(current_amps);
+  uint8_t ichg_val = (uint8_t)((current_amps - ICHG_MIN) / ICHG_STEP);
+  bool success = this->write_register_byte_(BQ25628E_REG_ICHG_CTRL, ichg_val);
   if (success) {
     this->charge_current_limit_ = current_amps;
     ESP_LOGI(TAG, "Charge current set to %.2f A", current_amps);
@@ -157,11 +167,13 @@ bool BQ25628EComponent::set_charge_current(float current_amps) {
 }
 
 bool BQ25628EComponent::set_charge_voltage(float voltage_volts) {
-  if (this->bq_ == nullptr) {
+  if (voltage_volts < VBAT_MIN || voltage_volts > VBAT_MAX) {
+    ESP_LOGE(TAG, "Charge voltage out of range: %.2f V", voltage_volts);
     return false;
   }
   
-  bool success = this->bq_->setChargeVoltageLimitV(voltage_volts);
+  uint8_t vbat_val = (uint8_t)((voltage_volts - VBAT_MIN) / VBAT_STEP);
+  bool success = this->write_register_byte_(BQ25628E_REG_VBAT_CTRL, vbat_val);
   if (success) {
     this->charge_voltage_limit_ = voltage_volts;
     ESP_LOGI(TAG, "Charge voltage set to %.2f V", voltage_volts);
@@ -170,11 +182,13 @@ bool BQ25628EComponent::set_charge_voltage(float voltage_volts) {
 }
 
 bool BQ25628EComponent::set_input_current(float current_amps) {
-  if (this->bq_ == nullptr) {
+  if (current_amps < IINDPM_MIN || current_amps > IINDPM_MAX) {
+    ESP_LOGE(TAG, "Input current out of range: %.2f A", current_amps);
     return false;
   }
   
-  bool success = this->bq_->setInputCurrentLimitA(current_amps);
+  uint8_t iindpm_val = (uint8_t)((current_amps - IINDPM_MIN) / IINDPM_STEP);
+  bool success = this->write_register_byte_(BQ25628E_REG_IINDPM_CTRL, iindpm_val);
   if (success) {
     this->input_current_limit_ = current_amps;
     ESP_LOGI(TAG, "Input current limit set to %.2f A", current_amps);
@@ -182,5 +196,33 @@ bool BQ25628EComponent::set_input_current(float current_amps) {
   return success;
 }
 
+bool BQ25628EComponent::write_register_byte_(uint8_t reg, uint8_t value) {
+  if (!this->write_byte(reg, value)) {
+    ESP_LOGW(TAG, "Failed to write register 0x%02X", reg);
+    return false;
+  }
+  return true;
+}
+
+bool BQ25628EComponent::read_register_byte_(uint8_t reg, uint8_t &value) {
+  if (!this->read_byte(reg, &value)) {
+    ESP_LOGW(TAG, "Failed to read register 0x%02X", reg);
+    return false;
+  }
+  return true;
+}
+
+bool BQ25628EComponent::read_register_word_(uint8_t reg, uint16_t &value) {
+  uint8_t msb, lsb;
+  if (!this->read_byte(reg, &msb) || !this->read_byte(reg + 1, &lsb)) {
+    ESP_LOGW(TAG, "Failed to read 16-bit register 0x%02X", reg);
+    return false;
+  }
+  // MSB first (big-endian)
+  value = (msb << 8) | lsb;
+  return true;
+}
+
 }  // namespace bq25628e
 }  // namespace esphome
+

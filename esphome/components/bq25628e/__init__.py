@@ -15,9 +15,6 @@ from esphome.const import (
 DEPENDENCIES = ["i2c"]
 CODEOWNERS = ["@usimd"]
 
-# Add Adafruit BQ25628E library dependency
-AUTO = True
-
 CONF_BQ25628E_ID = "bq25628e_id"
 CONF_BUS_VOLTAGE = "bus_voltage"
 CONF_BATTERY_VOLTAGE = "battery_voltage"
@@ -30,13 +27,6 @@ CONF_INPUT_CURRENT_LIMIT = "input_current_limit"
 bq25628e_ns = cg.esphome_ns.namespace("bq25628e")
 BQ25628EComponent = bq25628e_ns.class_(
     "BQ25628EComponent", cg.PollingComponent, i2c.I2CDevice
-)
-
-BQ25628EVoltage = bq25628e_ns.class_(
-    "BQ25628EVoltage", sensor.Sensor, cg.Component
-)
-BQ25628ECurrent = bq25628e_ns.class_(
-    "BQ25628ECurrent", sensor.Sensor, cg.Component
 )
 
 CONFIG_SCHEMA = (
@@ -84,10 +74,6 @@ CONFIG_SCHEMA = (
 
 
 async def to_code(config):
-    # Add Adafruit BQ25628E library from GitHub (not yet in PlatformIO registry)
-    cg.add_library("adafruit/Adafruit BusIO", "1.16.1")
-    cg.add_library("https://github.com/adafruit/Adafruit_BQ25628E.git", "1.0.0")
-    
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
     await i2c.register_i2c_device(var, config)
@@ -111,3 +97,4 @@ async def to_code(config):
     cg.add(var.set_charge_current_limit(config[CONF_CHARGE_CURRENT_LIMIT]))
     cg.add(var.set_charge_voltage_limit(config[CONF_CHARGE_VOLTAGE_LIMIT]))
     cg.add(var.set_input_current_limit(config[CONF_INPUT_CURRENT_LIMIT]))
+

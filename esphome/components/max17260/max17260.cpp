@@ -1,6 +1,5 @@
 #include "max17260.h"
 #include "esphome/core/log.h"
-#include "esphome/core/hal.h"
 
 namespace esphome {
 namespace max17260 {
@@ -10,27 +9,12 @@ static const char *const TAG = "max17260";
 void MAX17260Component::setup() {
   ESP_LOGCONFIG(TAG, "Setting up MAX17260...");
   
-  // Verify device presence by reading STATUS register
+  // Verify device is responding
   uint16_t status;
-  if (!this->read_register_16_(MAX17260_REG_STATUS, &status)) {
+  if (!this->read_register_word_(MAX17260_REG_STATUS, status)) {
     ESP_LOGE(TAG, "Failed to communicate with MAX17260");
     this->mark_failed();
     return;
-  }
-  
-  ESP_LOGD(TAG, "Status: 0x%04X", status);
-  
-  // Check if POR (Power-On Reset) bit is set
-  if (status & 0x0002) {
-    ESP_LOGI(TAG, "Power-On Reset detected, initializing fuel gauge");
-    
-    // Clear POR bit
-    if (!this->write_register_16_(MAX17260_REG_STATUS, status & ~0x0002)) {
-      ESP_LOGW(TAG, "Failed to clear POR bit");
-    }
-    
-    // Note: Full initialization would require battery capacity configuration
-    // For now, we assume the fuel gauge retains its configuration or uses defaults
   }
   
   ESP_LOGCONFIG(TAG, "MAX17260 setup complete");
@@ -47,102 +31,87 @@ void MAX17260Component::dump_config() {
   
   LOG_SENSOR("  ", "Voltage", this->voltage_sensor_);
   LOG_SENSOR("  ", "Current", this->current_sensor_);
+  LOG_SENSOR("  ", "State of Charge", this->soc_sensor_);
+  LOG_SENSOR("  ", "Time to Empty", this->tte_sensor_);
+  LOG_SENSOR("  ", "Time to Full", this->ttf_sensor_);
   LOG_SENSOR("  ", "Temperature", this->temperature_sensor_);
-  LOG_SENSOR("  ", "State of Charge", this->state_of_charge_sensor_);
-  LOG_SENSOR("  ", "Time to Empty", this->time_to_empty_sensor_);
-  LOG_SENSOR("  ", "Time to Full", this->time_to_full_sensor_);
 }
 
 void MAX17260Component::update() {
-  uint16_t raw_value;
-  
-  // Read and publish battery voltage (VCELL register)
-  if (this->read_register_16_(MAX17260_REG_VCELL, &raw_value)) {
-    if (this->voltage_sensor_ != nullptr) {
-      // VCELL LSB = 78.125 μV
-      float voltage = (raw_value * 78.125) / 1000000.0;
+  // Read and publish voltage (datasheet: 78.125µV per LSB)
+  if (this->voltage_sensor_ != nullptr) {
+    uint16_t raw_vcell;
+    if (this->read_register_word_(MAX17260_REG_AVGVCELL, raw_vcell)) {
+      float voltage = raw_vcell * VCELL_SCALE;
       this->voltage_sensor_->publish_state(voltage);
+      ESP_LOGD(TAG, "Voltage: %.3f V", voltage);
     }
-  } else {
-    ESP_LOGW(TAG, "Failed to read voltage");
   }
   
-  // Read and publish state of charge (RepSOC register)
-  if (this->read_register_16_(MAX17260_REG_REPSOC, &raw_value)) {
-    if (this->state_of_charge_sensor_ != nullptr) {
-      // RepSOC LSB = 1/256 %
-      float soc = raw_value / 256.0;
-      this->state_of_charge_sensor_->publish_state(soc);
-    }
-  } else {
-    ESP_LOGW(TAG, "Failed to read state of charge");
-  }
-  
-  // Read and publish current (Current register)
-  if (this->read_register_16_(MAX17260_REG_CURRENT, &raw_value)) {
-    if (this->current_sensor_ != nullptr) {
-      // Current is a signed 16-bit value
-      // LSB = 156.25 μV / R_sense (typically 10mΩ = 0.01Ω)
-      // Current [A] = raw_value * 156.25μV / 10mΩ = raw_value * 0.015625 mA
-      int16_t signed_current = (int16_t)raw_value;
-      float current = (signed_current * 0.15625) / 1000.0;  // Convert to Amps
+  // Read and publish current (datasheet: depends on sense resistor, assuming 5mΩ)
+  if (this->current_sensor_ != nullptr) {
+    uint16_t raw_current;
+    if (this->read_register_word_(MAX17260_REG_AVGCURRENT, raw_current)) {
+      // Signed 16-bit value
+      int16_t signed_current = (int16_t)raw_current;
+      float current = signed_current * CURRENT_SCALE_5mOhm;
       this->current_sensor_->publish_state(current);
+      ESP_LOGD(TAG, "Current: %.3f A", current);
     }
-  } else {
-    ESP_LOGW(TAG, "Failed to read current");
   }
   
-  // Read and publish temperature (Temp register)
-  if (this->read_register_16_(MAX17260_REG_TEMP, &raw_value)) {
-    if (this->temperature_sensor_ != nullptr) {
-      // Temperature LSB = 1/256 °C
-      int16_t signed_temp = (int16_t)raw_value;
-      float temperature = signed_temp / 256.0;
+  // Read and publish state of charge (datasheet: 1/256% per LSB)
+  if (this->soc_sensor_ != nullptr) {
+    uint16_t raw_soc;
+    if (this->read_register_word_(MAX17260_REG_REPSOC, raw_soc)) {
+      float soc = raw_soc * PERCENT_SCALE;
+      this->soc_sensor_->publish_state(soc);
+      ESP_LOGD(TAG, "SOC: %.1f %%", soc);
+    }
+  }
+  
+  // Read and publish time to empty (datasheet: 5.625s per LSB)
+  if (this->tte_sensor_ != nullptr) {
+    uint16_t raw_tte;
+    if (this->read_register_word_(MAX17260_REG_TTE, raw_tte)) {
+      float tte_minutes = (raw_tte * TIME_SCALE) / 60.0f;
+      this->tte_sensor_->publish_state(tte_minutes);
+      ESP_LOGD(TAG, "TTE: %.1f min", tte_minutes);
+    }
+  }
+  
+  // Read and publish time to full (datasheet: 5.625s per LSB)
+  if (this->ttf_sensor_ != nullptr) {
+    uint16_t raw_ttf;
+    if (this->read_register_word_(MAX17260_REG_TTF, raw_ttf)) {
+      float ttf_minutes = (raw_ttf * TIME_SCALE) / 60.0f;
+      this->ttf_sensor_->publish_state(ttf_minutes);
+      ESP_LOGD(TAG, "TTF: %.1f min", ttf_minutes);
+    }
+  }
+  
+  // Read and publish temperature (datasheet: 1/256°C per LSB)
+  if (this->temperature_sensor_ != nullptr) {
+    uint16_t raw_temp;
+    if (this->read_register_word_(MAX17260_REG_TEMP, raw_temp)) {
+      // Signed 16-bit value
+      int16_t signed_temp = (int16_t)raw_temp;
+      float temperature = signed_temp * TEMP_SCALE;
       this->temperature_sensor_->publish_state(temperature);
+      ESP_LOGD(TAG, "Temperature: %.1f °C", temperature);
     }
-  } else {
-    ESP_LOGW(TAG, "Failed to read temperature");
-  }
-  
-  // Read and publish time to empty (TTE register)
-  if (this->read_register_16_(MAX17260_REG_TTE, &raw_value)) {
-    if (this->time_to_empty_sensor_ != nullptr) {
-      // TTE LSB = 5.625 seconds
-      float tte_minutes = (raw_value * 5.625) / 60.0;
-      this->time_to_empty_sensor_->publish_state(tte_minutes);
-    }
-  } else {
-    ESP_LOGW(TAG, "Failed to read time to empty");
-  }
-  
-  // Read and publish time to full (TTF register)
-  if (this->read_register_16_(MAX17260_REG_TTF, &raw_value)) {
-    if (this->time_to_full_sensor_ != nullptr) {
-      // TTF LSB = 5.625 seconds
-      float ttf_minutes = (raw_value * 5.625) / 60.0;
-      this->time_to_full_sensor_->publish_state(ttf_minutes);
-    }
-  } else {
-    ESP_LOGW(TAG, "Failed to read time to full");
   }
 }
 
-bool MAX17260Component::read_register_16_(uint8_t reg, uint16_t *value) {
-  uint8_t data[2];
-  if (!this->read_bytes(reg, data, 2)) {
+bool MAX17260Component::read_register_word_(uint8_t reg, uint16_t &value) {
+  uint8_t lsb, msb;
+  if (!this->read_byte(reg, &lsb) || !this->read_byte(reg + 1, &msb)) {
+    ESP_LOGW(TAG, "Failed to read 16-bit register 0x%02X", reg);
     return false;
   }
-  
-  // MAX17260 uses little-endian byte order
-  *value = (uint16_t)data[0] | ((uint16_t)data[1] << 8);
+  // LSB first (little-endian)
+  value = (msb << 8) | lsb;
   return true;
-}
-
-bool MAX17260Component::write_register_16_(uint8_t reg, uint16_t value) {
-  uint8_t data[2];
-  data[0] = value & 0xFF;
-  data[1] = (value >> 8) & 0xFF;
-  return this->write_bytes(reg, data, 2);
 }
 
 }  // namespace max17260
