@@ -123,7 +123,7 @@ bool BQ25628EComponent::read_adc_values_() {
   
   // Read and publish ICHG (charge current)
   if (this->charge_current_sensor_ != nullptr) {
-    float ichg = this->bq_->getChargeCurrent();
+    float ichg = this->bq_->getIBATcurrent();
     this->charge_current_sensor_->publish_state(ichg);
     ESP_LOGD(TAG, "ICHG: %.3f A", ichg);
   }
