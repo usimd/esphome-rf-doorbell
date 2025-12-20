@@ -93,7 +93,7 @@ CONFIG_SCHEMA = (
 async def to_code(config):
     # Add Adafruit BQ25628E library from GitHub (not yet in PlatformIO registry)
     cg.add_library("adafruit/Adafruit BusIO", "1.16.1")
-    cg.add_library("https://github.com/adafruit/Adafruit_BQ25628E.git")
+    cg.add_library("https://github.com/adafruit/Adafruit_BQ25628E.git", "1.0.0")
     
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
