@@ -50,8 +50,6 @@ void BQ25628EComponent::dump_config() {
   LOG_SENSOR("  ", "Battery Voltage", this->battery_voltage_sensor_);
   LOG_SENSOR("  ", "Charge Current", this->charge_current_sensor_);
   LOG_SENSOR("  ", "System Voltage", this->system_voltage_sensor_);
-  LOG_TEXT_SENSOR("  ", "Charger Status", this->charger_status_sensor_);
-  LOG_TEXT_SENSOR("  ", "Fault Status", this->fault_status_sensor_);
 }
 
 void BQ25628EComponent::update() {
@@ -63,22 +61,6 @@ void BQ25628EComponent::update() {
   if (!this->read_adc_values_()) {
     ESP_LOGW(TAG, "Failed to read ADC values");
     return;
-  }
-  
-  // Read and publish charger status
-  if (this->charger_status_sensor_ != nullptr) {
-    uint8_t status = this->bq_->getChargeStatus();
-    this->charger_status_sensor_->publish_state(this->get_charger_status_text_(status));
-  }
-  
-  // Read and publish fault status
-  if (this->fault_status_sensor_ != nullptr) {
-    uint8_t fault = this->bq_->getFaultStatus();
-    if (fault != 0) {
-      this->fault_status_sensor_->publish_state(this->get_fault_status_text_(fault));
-    } else {
-      this->fault_status_sensor_->publish_state("None");
-    }
   }
 }
 
@@ -199,31 +181,6 @@ bool BQ25628EComponent::set_input_current(float current_amps) {
     ESP_LOGI(TAG, "Input current limit set to %.2f A", current_amps);
   }
   return success;
-}
-
-const char *BQ25628EComponent::get_charger_status_text_(uint8_t status) {
-  switch (status) {
-    case 0: return "Not Charging";
-    case 1: return "Pre-Charge";
-    case 2: return "Fast Charging";
-    case 3: return "Charge Termination Done";
-    default: return "Unknown";
-  }
-}
-
-const char *BQ25628EComponent::get_fault_status_text_(uint8_t fault) {
-  if (fault == 0) {
-    return "None";
-  }
-  
-  // Decode fault bits (simplified - Adafruit library may provide better methods)
-  if (fault & 0x80) return "Watchdog Fault";
-  if (fault & 0x40) return "Input Fault";
-  if (fault & 0x20) return "Thermal Shutdown";
-  if (fault & 0x10) return "Battery Fault";
-  if (fault & 0x08) return "Safety Timer Fault";
-  
-  return "Fault";
 }
 
 }  // namespace bq25628e

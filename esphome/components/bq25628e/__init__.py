@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import i2c, sensor, text_sensor
+from esphome.components import i2c, sensor
 from esphome.const import (
     CONF_ID,
     CONF_VOLTAGE,
@@ -23,8 +23,6 @@ CONF_BUS_VOLTAGE = "bus_voltage"
 CONF_BATTERY_VOLTAGE = "battery_voltage"
 CONF_CHARGE_CURRENT = "charge_current"
 CONF_SYSTEM_VOLTAGE = "system_voltage"
-CONF_CHARGER_STATUS = "charger_status"
-CONF_FAULT_STATUS = "fault_status"
 CONF_CHARGE_CURRENT_LIMIT = "charge_current_limit"
 CONF_CHARGE_VOLTAGE_LIMIT = "charge_voltage_limit"
 CONF_INPUT_CURRENT_LIMIT = "input_current_limit"
@@ -39,9 +37,6 @@ BQ25628EVoltage = bq25628e_ns.class_(
 )
 BQ25628ECurrent = bq25628e_ns.class_(
     "BQ25628ECurrent", sensor.Sensor, cg.Component
-)
-BQ25628EChargerStatus = bq25628e_ns.class_(
-    "BQ25628EChargerStatus", text_sensor.TextSensor, cg.Component
 )
 
 CONFIG_SCHEMA = (
@@ -72,8 +67,6 @@ CONFIG_SCHEMA = (
                 device_class=DEVICE_CLASS_VOLTAGE,
                 state_class=STATE_CLASS_MEASUREMENT,
             ),
-            cv.Optional(CONF_CHARGER_STATUS): text_sensor.text_sensor_schema(),
-            cv.Optional(CONF_FAULT_STATUS): text_sensor.text_sensor_schema(),
             cv.Optional(CONF_CHARGE_CURRENT_LIMIT, default=1.0): cv.float_range(
                 min=0.05, max=3.0
             ),
@@ -114,14 +107,6 @@ async def to_code(config):
     if CONF_SYSTEM_VOLTAGE in config:
         sens = await sensor.new_sensor(config[CONF_SYSTEM_VOLTAGE])
         cg.add(var.set_system_voltage_sensor(sens))
-
-    if CONF_CHARGER_STATUS in config:
-        sens = await text_sensor.new_text_sensor(config[CONF_CHARGER_STATUS])
-        cg.add(var.set_charger_status_sensor(sens))
-
-    if CONF_FAULT_STATUS in config:
-        sens = await text_sensor.new_text_sensor(config[CONF_FAULT_STATUS])
-        cg.add(var.set_fault_status_sensor(sens))
 
     cg.add(var.set_charge_current_limit(config[CONF_CHARGE_CURRENT_LIMIT]))
     cg.add(var.set_charge_voltage_limit(config[CONF_CHARGE_VOLTAGE_LIMIT]))
