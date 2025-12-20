@@ -13,9 +13,8 @@ void BQ25628EComponent::setup() {
   // Create Adafruit BQ25628E instance
   this->bq_ = new Adafruit_BQ25628E();
   
-  // Initialize with I2C address (note: Adafruit defaults to 0x6A, but we use 0x6B)
-  Wire.begin(this->parent_->get_sda_pin(), this->parent_->get_scl_pin());
-  if (!this->bq_->begin(this->address_, &Wire)) {
+  // Initialize with I2C address
+  if (!this->bq_->begin(this->address_)) {
     ESP_LOGE(TAG, "Failed to initialize BQ25628E at address 0x%02X", this->address_);
     this->mark_failed();
     return;
@@ -69,29 +68,29 @@ bool BQ25628EComponent::configure_charger_() {
     return false;
   }
   
-  // Set charge current limit
-  if (!this->bq_->setChargeCurrent(this->charge_current_limit_ * 1000)) {  // Convert A to mA
+  // Set charge current limit (Adafruit library uses Amperes directly)
+  if (!this->bq_->setChargeCurrentLimitA(this->charge_current_limit_)) {
     ESP_LOGE(TAG, "Failed to set charge current limit");
     return false;
   }
   ESP_LOGD(TAG, "Charge current limit set to %.2f A", this->charge_current_limit_);
   
-  // Set charge voltage limit
-  if (!this->bq_->setChargeVoltage(this->charge_voltage_limit_ * 1000)) {  // Convert V to mV
+  // Set charge voltage limit (Adafruit library uses Volts directly)
+  if (!this->bq_->setChargeVoltageLimitV(this->charge_voltage_limit_)) {
     ESP_LOGE(TAG, "Failed to set charge voltage limit");
     return false;
   }
   ESP_LOGD(TAG, "Charge voltage limit set to %.2f V", this->charge_voltage_limit_);
   
-  // Set input current limit
-  if (!this->bq_->setInputCurrentLimit(this->input_current_limit_ * 1000)) {  // Convert A to mA
+  // Set input current limit (Adafruit library uses Amperes directly)
+  if (!this->bq_->setInputCurrentLimitA(this->input_current_limit_)) {
     ESP_LOGE(TAG, "Failed to set input current limit");
     return false;
   }
   ESP_LOGD(TAG, "Input current limit set to %.2f A", this->input_current_limit_);
   
-  // Enable ADC for continuous conversion
-  this->bq_->enableADC(true);
+  // Enable ADC for continuous conversion (inverted logic)
+  this->bq_->setDisableADC(false);
   
   return true;
 }
@@ -103,28 +102,28 @@ bool BQ25628EComponent::read_adc_values_() {
   
   // Read and publish VBUS (bus voltage)
   if (this->bus_voltage_sensor_ != nullptr) {
-    float vbus = this->bq_->getVbusVoltage() / 1000.0;  // Convert mV to V
+    float vbus = this->bq_->getVBUSvoltage();
     this->bus_voltage_sensor_->publish_state(vbus);
     ESP_LOGD(TAG, "VBUS: %.2f V", vbus);
   }
   
   // Read and publish VBAT (battery voltage)
   if (this->battery_voltage_sensor_ != nullptr) {
-    float vbat = this->bq_->getBatteryVoltage() / 1000.0;  // Convert mV to V
+    float vbat = this->bq_->getVBATvoltage();
     this->battery_voltage_sensor_->publish_state(vbat);
     ESP_LOGD(TAG, "VBAT: %.2f V", vbat);
   }
   
   // Read and publish VSYS (system voltage)
   if (this->system_voltage_sensor_ != nullptr) {
-    float vsys = this->bq_->getSystemVoltage() / 1000.0;  // Convert mV to V
+    float vsys = this->bq_->getVSYSvoltage();
     this->system_voltage_sensor_->publish_state(vsys);
     ESP_LOGD(TAG, "VSYS: %.2f V", vsys);
   }
   
   // Read and publish ICHG (charge current)
   if (this->charge_current_sensor_ != nullptr) {
-    float ichg = this->bq_->getChargeCurrent() / 1000.0;  // Convert mA to A
+    float ichg = this->bq_->getChargeCurrent();
     this->charge_current_sensor_->publish_state(ichg);
     ESP_LOGD(TAG, "ICHG: %.3f A", ichg);
   }
@@ -137,7 +136,7 @@ bool BQ25628EComponent::set_charging_enabled(bool enabled) {
     return false;
   }
   
-  bool success = this->bq_->enableCharging(enabled);
+  bool success = this->bq_->setEnableCharging(enabled);
   if (success) {
     ESP_LOGI(TAG, "Charging %s", enabled ? "enabled" : "disabled");
   }
@@ -149,7 +148,7 @@ bool BQ25628EComponent::set_charge_current(float current_amps) {
     return false;
   }
   
-  bool success = this->bq_->setChargeCurrent(current_amps * 1000);  // Convert A to mA
+  bool success = this->bq_->setChargeCurrentLimitA(current_amps);
   if (success) {
     this->charge_current_limit_ = current_amps;
     ESP_LOGI(TAG, "Charge current set to %.2f A", current_amps);
@@ -162,7 +161,7 @@ bool BQ25628EComponent::set_charge_voltage(float voltage_volts) {
     return false;
   }
   
-  bool success = this->bq_->setChargeVoltage(voltage_volts * 1000);  // Convert V to mV
+  bool success = this->bq_->setChargeVoltageLimitV(voltage_volts);
   if (success) {
     this->charge_voltage_limit_ = voltage_volts;
     ESP_LOGI(TAG, "Charge voltage set to %.2f V", voltage_volts);
@@ -175,7 +174,7 @@ bool BQ25628EComponent::set_input_current(float current_amps) {
     return false;
   }
   
-  bool success = this->bq_->setInputCurrentLimit(current_amps * 1000);  // Convert A to mA
+  bool success = this->bq_->setInputCurrentLimitA(current_amps);
   if (success) {
     this->input_current_limit_ = current_amps;
     ESP_LOGI(TAG, "Input current limit set to %.2f A", current_amps);
