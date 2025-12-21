@@ -58,10 +58,10 @@ CONFIG_SCHEMA = (
                 state_class=STATE_CLASS_MEASUREMENT,
             ),
             cv.Optional(CONF_CHARGE_CURRENT_LIMIT, default=1.0): cv.float_range(
-                min=0.05, max=3.0
+                min=0.04, max=2.0
             ),
             cv.Optional(CONF_CHARGE_VOLTAGE_LIMIT, default=4.2): cv.float_range(
-                min=3.84, max=4.624
+                min=3.5, max=4.8
             ),
             cv.Optional(CONF_INPUT_CURRENT_LIMIT, default=0.5): cv.float_range(
                 min=0.1, max=3.2
@@ -69,7 +69,7 @@ CONFIG_SCHEMA = (
         }
     )
     .extend(cv.polling_component_schema("60s"))
-    .extend(i2c.i2c_device_schema(0x6B))
+    .extend(i2c.i2c_device_schema(0x6A))
 )
 
 

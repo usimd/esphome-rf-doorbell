@@ -22,26 +22,26 @@ static const uint8_t BQ25628E_REG_VBAT_ADC = 0x30;  // Battery Voltage ADC (2 by
 static const uint8_t BQ25628E_REG_VSYS_ADC = 0x32;  // System Voltage ADC (2 bytes)
 
 // ADC scaling factors from datasheet
-static const float VBUS_ADC_STEP = 0.001f;  // 1mV per LSB
-static const float VBAT_ADC_STEP = 0.001f;  // 1mV per LSB
-static const float VSYS_ADC_STEP = 0.001f;  // 1mV per LSB
-static const float IBAT_ADC_STEP = 0.001f;  // 1mA per LSB
-static const float IBUS_ADC_STEP = 0.001f;  // 1mA per LSB
+static const float VBUS_ADC_STEP = 0.00397f;  // 3.97mV per LSB (REG0x2C)
+static const float VBAT_ADC_STEP = 0.00199f;  // 1.99mV per LSB (REG0x30)
+static const float VSYS_ADC_STEP = 0.00199f;  // 1.99mV per LSB (REG0x32)
+static const float IBAT_ADC_STEP = 0.004f;    // 4mA per LSB (REG0x2A)
+static const float IBUS_ADC_STEP = 0.002f;    // 2mA per LSB (REG0x28)
 
-// Charge current limit: 50mA to 3000mA, step 50mA
-static const float ICHG_STEP = 0.05f;  // 50mA
-static const float ICHG_MIN = 0.05f;   // 50mA
-static const float ICHG_MAX = 3.0f;    // 3000mA
+// Charge current limit: 40mA to 2000mA, step 40mA
+static const float ICHG_STEP = 0.04f;  // 40mA
+static const float ICHG_MIN = 0.04f;   // 40mA
+static const float ICHG_MAX = 2.0f;    // 2000mA
 
-// Charge voltage limit: 3.84V to 4.624V, step 8mV
-static const float VBAT_STEP = 0.008f;  // 8mV
-static const float VBAT_MIN = 3.84f;
-static const float VBAT_MAX = 4.624f;
+// Charge voltage limit: 3500mV to 4800mV, step 10mV
+static const float VBAT_STEP = 0.01f;  // 10mV
+static const float VBAT_MIN = 3.5f;
+static const float VBAT_MAX = 4.8f;
 
-// Input current limit: 100mA to 3200mA, step 100mA
-static const float IINDPM_STEP = 0.1f;  // 100mA
-static const float IINDPM_MIN = 0.1f;   // 100mA
-static const float IINDPM_MAX = 3.2f;   // 3200mA
+// Input current limit: 100mA to 3200mA, step 20mA
+static const float IINDPM_STEP = 0.02f;  // 20mA
+static const float IINDPM_MIN = 0.1f;    // 100mA
+static const float IINDPM_MAX = 3.2f;    // 3200mA
 
 class BQ25628EComponent : public PollingComponent, public i2c::I2CDevice {
  public:
