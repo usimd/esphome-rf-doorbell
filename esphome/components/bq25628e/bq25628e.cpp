@@ -272,18 +272,19 @@ bool BQ25628EComponent::read_adc_values_() {
 
 bool BQ25628EComponent::set_charging_enabled(bool enabled) {
   uint8_t reg_val;
-  if (!this->read_register_byte_(BQ25628E_REG_CHG_CTRL, reg_val)) {
+  if (!this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, reg_val)) {
     return false;
   }
   
-  // Bit 5 of CHG_CTRL register controls charging enable (datasheet: 1 = disable, 0 = enable)
+  // Bit 5 of REG0x16 (Charger Control 0) controls charging enable
+  // 1 = enable, 0 = disable
   if (enabled) {
-    reg_val &= ~(1 << 5);  // Clear bit 5 to enable
+    reg_val |= CHARGER_CTRL_0_EN_CHG;  // Set bit 5 to enable
   } else {
-    reg_val |= (1 << 5);   // Set bit 5 to disable
+    reg_val &= ~CHARGER_CTRL_0_EN_CHG;  // Clear bit 5 to disable
   }
   
-  bool success = this->write_register_byte_(BQ25628E_REG_CHG_CTRL, reg_val);
+  bool success = this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, reg_val);
   if (success) {
     ESP_LOGI(TAG, "Charging %s", enabled ? "enabled" : "disabled");
   }
