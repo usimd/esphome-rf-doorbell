@@ -58,11 +58,15 @@ void BQ25628EComponent::update() {
 }
 
 bool BQ25628EComponent::configure_charger_() {
+  ESP_LOGD(TAG, "Starting configure_charger_()");
+  
   // Set charge current limit (datasheet: 40mA to 2000mA, step 40mA, LSB of 16-bit register)
   uint8_t ichg_val = (uint8_t)((this->charge_current_limit_ - ICHG_MIN) / ICHG_STEP);
   uint16_t ichg_word = ichg_val;  // MSB = 0x00, LSB = ichg_val
+  ESP_LOGD(TAG, "About to write ICHG_CTRL: reg=0x%02X, value=0x%04X (%d), calculated current=%.2f A", 
+           BQ25628E_REG_ICHG_CTRL, ichg_word, ichg_val, this->charge_current_limit_);
   if (!this->write_register_word_(BQ25628E_REG_ICHG_CTRL, ichg_word)) {
-    ESP_LOGE(TAG, "Failed to set charge current limit");
+    ESP_LOGE(TAG, "Failed to set charge current limit (reg 0x%02X)", BQ25628E_REG_ICHG_CTRL);
     return false;
   }
   ESP_LOGD(TAG, "Charge current limit set to %.2f A", this->charge_current_limit_);
@@ -489,10 +493,16 @@ bool BQ25628EComponent::write_register_word_(uint8_t reg, uint16_t value) {
   // Write little-endian (LSB first)
   uint8_t lsb = value & 0xFF;
   uint8_t msb = (value >> 8) & 0xFF;
-  if (!this->write_byte(reg, lsb) || !this->write_byte(reg + 1, msb)) {
-    ESP_LOGW(TAG, "Failed to write 16-bit register 0x%02X", reg);
+  ESP_LOGD(TAG, "write_register_word_: reg=0x%02X, lsb=0x%02X, msb=0x%02X", reg, lsb, msb);
+  if (!this->write_byte(reg, lsb)) {
+    ESP_LOGE(TAG, "Failed to write LSB to register 0x%02X", reg);
     return false;
   }
+  if (!this->write_byte(reg + 1, msb)) {
+    ESP_LOGE(TAG, "Failed to write MSB to register 0x%02X", reg + 1);
+    return false;
+  }
+  ESP_LOGD(TAG, "Successfully wrote 0x%04X to register 0x%02X", value, reg);
   return true;
 }
 
