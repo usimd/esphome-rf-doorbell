@@ -1,0 +1,360 @@
+# Home Assistant Automation Examples for ESPHome RF Doorbell
+# Add these to your Home Assistant configuration.yaml or automations.yaml
+
+# ============================================================================
+# DOORBELL NOTIFICATIONS
+# ============================================================================
+
+# Basic doorbell notification
+- alias: "Doorbell - Ring Notification"
+  description: "Send notification when doorbell is pressed"
+  trigger:
+    - platform: event
+      event_type: esphome.doorbell_ring
+  action:
+    - service: notify.mobile_app
+      data:
+        message: "Someone is at the door! 🔔"
+        title: "Doorbell"
+        data:
+          tag: doorbell
+          group: doorbell
+          importance: high
+          ttl: 0
+          priority: high
+          notification_icon: mdi:bell-ring
+
+# Doorbell with camera snapshot
+- alias: "Doorbell - Ring with Camera"
+  description: "Take camera snapshot when doorbell rings"
+  trigger:
+    - platform: event
+      event_type: esphome.doorbell_ring
+  action:
+    - service: camera.snapshot
+      target:
+        entity_id: camera.front_door
+      data:
+        filename: /config/www/snapshots/doorbell_{{ now().strftime('%Y%m%d_%H%M%S') }}.jpg
+    - service: notify.mobile_app
+      data:
+        message: "Someone is at the door!"
+        title: "Doorbell"
+        data:
+          image: /local/snapshots/doorbell_latest.jpg
+          tag: doorbell
+
+# Doorbell during quiet hours
+- alias: "Doorbell - Mute During Sleep"
+  description: "Auto-mute doorbell during night hours"
+  trigger:
+    - platform: time
+      at: "22:00:00"
+  action:
+    - service: switch.turn_on
+      target:
+        entity_id: switch.esphome_rf_doorbell_bell_mute
+
+- alias: "Doorbell - Unmute in Morning"
+  description: "Auto-unmute doorbell in morning"
+  trigger:
+    - platform: time
+      at: "07:00:00"
+  action:
+    - service: switch.turn_off
+      target:
+        entity_id: switch.esphome_rf_doorbell_bell_mute
+
+# ============================================================================
+# BATTERY MANAGEMENT
+# ============================================================================
+
+# Low battery warning
+- alias: "Doorbell - Low Battery Alert"
+  description: "Notify when battery is low"
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.esphome_rf_doorbell_battery_percentage
+      below: 20
+  condition:
+    - condition: template
+      value_template: >
+        {{ (as_timestamp(now()) - as_timestamp(state_attr('automation.doorbell_low_battery_alert', 'last_triggered') | default(0)) | int > 3600) }}
+  action:
+    - service: notify.all_devices
+      data:
+        message: "Doorbell battery is low ({{ states('sensor.esphome_rf_doorbell_battery_percentage') }}%)"
+        title: "Low Battery Warning"
+        data:
+          tag: battery_low
+          importance: high
+
+# Critical battery alert
+- alias: "Doorbell - Critical Battery Alert"
+  description: "Urgent notification when battery critical"
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.esphome_rf_doorbell_battery_percentage
+      below: 10
+  action:
+    - service: notify.all_devices
+      data:
+        message: "URGENT: Doorbell battery critically low ({{ states('sensor.esphome_rf_doorbell_battery_percentage') }}%)! Please charge immediately."
+        title: "Critical Battery"
+        data:
+          tag: battery_critical
+          importance: max
+          priority: high
+
+# Charging complete notification
+- alias: "Doorbell - Charging Complete"
+  description: "Notify when battery fully charged"
+  trigger:
+    - platform: state
+      entity_id: text_sensor.esphome_rf_doorbell_charger_status
+      to: "Charge Termination Done"
+  condition:
+    - condition: numeric_state
+      entity_id: sensor.esphome_rf_doorbell_battery_percentage
+      above: 95
+  action:
+    - service: notify.mobile_app
+      data:
+        message: "Doorbell battery is fully charged ({{ states('sensor.esphome_rf_doorbell_battery_percentage') }}%)"
+        title: "Charging Complete"
+
+# Battery health monitoring
+- alias: "Doorbell - Battery Health Check"
+  description: "Daily battery health report"
+  trigger:
+    - platform: time
+      at: "09:00:00"
+  action:
+    - service: notify.mobile_app
+      data:
+        message: >
+          Battery: {{ states('sensor.esphome_rf_doorbell_battery_percentage') }}%
+          Voltage: {{ states('sensor.esphome_rf_doorbell_battery_voltage_fuel_gauge') }}V
+          Time to empty: {{ states('sensor.esphome_rf_doorbell_battery_time_to_empty') }} min
+          Status: {{ states('text_sensor.esphome_rf_doorbell_charger_status') }}
+        title: "Doorbell Battery Report"
+
+# ============================================================================
+# DOOR OPENER CONTROLS
+# ============================================================================
+
+# Open door from notification action
+- alias: "Doorbell - Open Door from Notification"
+  description: "Open door when notification action is tapped"
+  trigger:
+    - platform: event
+      event_type: mobile_app_notification_action
+      event_data:
+        action: open_door
+  action:
+    - service: switch.turn_on
+      target:
+        entity_id: switch.esphome_rf_doorbell_door_opener
+
+# Temporary guest access
+- alias: "Doorbell - Guest Mode Enable"
+  description: "Enable guest mode for auto door opening"
+  trigger:
+    - platform: state
+      entity_id: input_boolean.doorbell_guest_mode
+      to: "on"
+  action:
+    - service: notify.mobile_app
+      data:
+        message: "Guest mode enabled - Door will auto-open on doorbell press for 2 hours"
+        title: "Guest Mode Active"
+
+- alias: "Doorbell - Auto Open in Guest Mode"
+  description: "Automatically open door in guest mode"
+  trigger:
+    - platform: event
+      event_type: esphome.doorbell_ring
+  condition:
+    - condition: state
+      entity_id: input_boolean.doorbell_guest_mode
+      state: "on"
+  action:
+    - service: switch.turn_on
+      target:
+        entity_id: switch.esphome_rf_doorbell_door_opener
+    - service: notify.mobile_app
+      data:
+        message: "Door opened automatically (Guest Mode)"
+        title: "Door Opened"
+
+# Disable guest mode after 2 hours
+- alias: "Doorbell - Auto Disable Guest Mode"
+  description: "Turn off guest mode after timeout"
+  trigger:
+    - platform: state
+      entity_id: input_boolean.doorbell_guest_mode
+      to: "on"
+      for:
+        hours: 2
+  action:
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.doorbell_guest_mode
+    - service: notify.mobile_app
+      data:
+        message: "Guest mode automatically disabled"
+        title: "Guest Mode Off"
+
+# ============================================================================
+# POWER MANAGEMENT
+# ============================================================================
+
+# Enable deep sleep when away
+- alias: "Doorbell - Deep Sleep When Away"
+  description: "Enable deep sleep when everyone is away"
+  trigger:
+    - platform: state
+      entity_id: group.all_persons
+      to: "not_home"
+      for:
+        minutes: 10
+  action:
+    - service: button.press
+      target:
+        entity_id: button.esphome_rf_doorbell_trigger_deep_sleep
+
+# Prevent deep sleep when home
+- alias: "Doorbell - Prevent Deep Sleep When Home"
+  description: "Keep doorbell awake when someone is home"
+  trigger:
+    - platform: state
+      entity_id: group.all_persons
+      to: "home"
+  action:
+    - service: button.press
+      target:
+        entity_id: button.esphome_rf_doorbell_prevent_deep_sleep
+
+# ============================================================================
+# CHARGER FAULT DETECTION
+# ============================================================================
+
+- alias: "Doorbell - Charger Fault Alert"
+  description: "Alert on charger fault"
+  trigger:
+    - platform: state
+      entity_id: text_sensor.esphome_rf_doorbell_charger_fault
+  condition:
+    - condition: template
+      value_template: "{{ trigger.to_state.state not in ['Normal', 'unknown', 'unavailable'] }}"
+  action:
+    - service: notify.all_devices
+      data:
+        message: "Doorbell charger fault: {{ states('text_sensor.esphome_rf_doorbell_charger_fault') }}"
+        title: "Charger Fault"
+        data:
+          tag: charger_fault
+          importance: high
+
+# ============================================================================
+# CONNECTIVITY MONITORING
+# ============================================================================
+
+- alias: "Doorbell - Offline Alert"
+  description: "Alert when doorbell goes offline"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.esphome_rf_doorbell_status
+      to: "unavailable"
+      for:
+        minutes: 5
+  action:
+    - service: notify.mobile_app
+      data:
+        message: "Doorbell has gone offline"
+        title: "Doorbell Offline"
+        data:
+          tag: offline
+          importance: high
+
+- alias: "Doorbell - Back Online"
+  description: "Notify when doorbell comes back online"
+  trigger:
+    - platform: state
+      entity_id: binary_sensor.esphome_rf_doorbell_status
+      to: "on"
+  condition:
+    - condition: template
+      value_template: "{{ trigger.from_state.state == 'unavailable' }}"
+  action:
+    - service: notify.mobile_app
+      data:
+        message: "Doorbell is back online"
+        title: "Doorbell Connected"
+
+# ============================================================================
+# HELPER INPUT BOOLEANS
+# ============================================================================
+# Add these to your configuration.yaml:
+#
+# input_boolean:
+#   doorbell_guest_mode:
+#     name: Doorbell Guest Mode
+#     icon: mdi:account-multiple
+#
+#   doorbell_do_not_disturb:
+#     name: Doorbell Do Not Disturb
+#     icon: mdi:bell-off
+#
+# input_number:
+#   doorbell_quiet_hour_start:
+#     name: Quiet Hours Start
+#     min: 0
+#     max: 23
+#     step: 1
+#     unit_of_measurement: "hour"
+#     icon: mdi:clock-start
+#
+#   doorbell_quiet_hour_end:
+#     name: Quiet Hours End
+#     min: 0
+#     max: 23
+#     step: 1
+#     unit_of_measurement: "hour"
+#     icon: mdi:clock-end
+
+# ============================================================================
+# LOVELACE DASHBOARD CARD EXAMPLE
+# ============================================================================
+# Add this to your Lovelace dashboard:
+#
+# type: vertical-stack
+# cards:
+#   - type: entities
+#     title: Doorbell Status
+#     entities:
+#       - entity: sensor.esphome_rf_doorbell_battery_percentage
+#         name: Battery
+#       - entity: text_sensor.esphome_rf_doorbell_charger_status
+#         name: Charger Status
+#       - entity: sensor.esphome_rf_doorbell_battery_time_to_empty
+#         name: Time to Empty
+#       - entity: switch.esphome_rf_doorbell_bell_mute
+#         name: Mute Bell
+#       - entity: input_boolean.doorbell_guest_mode
+#         name: Guest Mode
+#   
+#   - type: button
+#     name: Open Door
+#     icon: mdi:door-open
+#     tap_action:
+#       action: call-service
+#       service: switch.turn_on
+#       target:
+#         entity_id: switch.esphome_rf_doorbell_door_opener
+#   
+#   - type: history-graph
+#     title: Battery History
+#     hours_to_show: 24
+#     entities:
+#       - entity: sensor.esphome_rf_doorbell_battery_percentage

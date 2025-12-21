@@ -111,7 +111,7 @@ bool BQ25628EComponent::configure_charger_() {
   
   // Read back to verify
   uint16_t vbusovp_readback = 0;
-  if (this->read_register_word_(BQ25628E_REG_VBUSOVP_CTRL, &vbusovp_readback)) {
+  if (this->read_register_word_(BQ25628E_REG_VBUSOVP_CTRL, vbusovp_readback)) {
     ESP_LOGD(TAG, "VBUS OVP register readback: 0x%04X (expected 0x00FA)", vbusovp_readback);
     if (vbusovp_readback != vbusovp_word) {
       ESP_LOGW(TAG, "VBUS OVP readback mismatch! Wrote 0x%04X, read 0x%04X", vbusovp_word, vbusovp_readback);
