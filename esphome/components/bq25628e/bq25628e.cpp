@@ -99,22 +99,24 @@ bool BQ25628EComponent::configure_charger_() {
   ESP_LOGD(TAG, "Input voltage limit set to %.2f V", this->input_voltage_limit_);
   
   // Set VBUS overvoltage protection threshold (REG0x0A: 6V to 16.76V, step 40mV, LSB of 16-bit register)
-  // Default is ~14V which is too low for 14.3V bench supply - set to 16V
-  uint8_t vbusovp_val = (uint8_t)((16.0f - 6.0f) / 0.04f);  // 250 steps for 16V
-  uint16_t vbusovp_word = vbusovp_val;  // MSB = 0x00, LSB = vbusovp_val
+  // Chip masks lower 4 bits (16-step granularity), so use 0xFF for maximum threshold
+  // 0xFF → chip accepts 0xF0 → 6.0 + (240 × 0.04) = 15.6V
+  // Try 0xFF (maximum) to test if fault clears
+  uint16_t vbusovp_word = 0x00FF;  // Maximum value
   if (!this->write_register_word_(BQ25628E_REG_VBUSOVP_CTRL, vbusovp_word)) {
     ESP_LOGE(TAG, "Failed to set VBUS OVP threshold");
     return false;
   }
-  float vbusovp_threshold = 6.0f + (vbusovp_val * 0.04f);
-  ESP_LOGD(TAG, "VBUS OVP threshold set to %.2f V", vbusovp_threshold);
+  ESP_LOGD(TAG, "VBUS OVP threshold set to maximum (wrote 0x%04X)", vbusovp_word);
   
-  // Read back to verify
+  // Read back to verify and decode actual threshold
   uint16_t vbusovp_readback = 0;
   if (this->read_register_word_(BQ25628E_REG_VBUSOVP_CTRL, vbusovp_readback)) {
-    ESP_LOGD(TAG, "VBUS OVP register readback: 0x%04X (expected 0x00FA)", vbusovp_readback);
+    uint8_t threshold_val = vbusovp_readback & 0xFF;  // LSB contains threshold
+    float actual_threshold = 6.0f + (threshold_val * 0.04f);
+    ESP_LOGD(TAG, "VBUS OVP readback: 0x%04X → %.2fV threshold", vbusovp_readback, actual_threshold);
     if (vbusovp_readback != vbusovp_word) {
-      ESP_LOGW(TAG, "VBUS OVP readback mismatch! Wrote 0x%04X, read 0x%04X", vbusovp_word, vbusovp_readback);
+      ESP_LOGW(TAG, "VBUS OVP mismatch (chip masks bits): wrote 0x%04X, read 0x%04X", vbusovp_word, vbusovp_readback);
     }
   } else {
     ESP_LOGW(TAG, "Failed to read back VBUS OVP register");
