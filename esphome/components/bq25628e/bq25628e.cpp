@@ -180,87 +180,95 @@ bool BQ25628EComponent::configure_charger_() {
 }
 
 bool BQ25628EComponent::read_adc_values_() {
-  // Read and publish VBUS (bus voltage) - datasheet: 3.97mV per LSB, 16-bit
+  // Read and publish VBUS (input voltage) - datasheet: 3.97mV per LSB, bits 14:2
   if (this->bus_voltage_sensor_ != nullptr) {
     uint16_t raw_vbus;
     if (this->read_register_word_(BQ25628E_REG_VBUS_ADC, raw_vbus)) {
-      float vbus = raw_vbus * VBUS_ADC_STEP;
-      ESP_LOGD(TAG, "VBUS raw: 0x%04X, value: %.2f V", raw_vbus, vbus);
+      uint16_t vbus_adc = (raw_vbus >> 2) & 0x1FFF;  // Bits 14:2, 13-bit value
+      float vbus = vbus_adc * VBUS_ADC_STEP;
+      ESP_LOGD(TAG, "VBUS raw: 0x%04X, ADC: %d, value: %.2f V", raw_vbus, vbus_adc, vbus);
       this->bus_voltage_sensor_->publish_state(vbus);
     } else {
       ESP_LOGW(TAG, "Failed to read VBUS");
     }
   }
   
-  // Read and publish VBAT (battery voltage) - datasheet: 1.99mV per LSB, 16-bit
+  // Read and publish VBAT (battery voltage) - datasheet: 1.99mV per LSB, bits 12:1
   if (this->battery_voltage_sensor_ != nullptr) {
     uint16_t raw_vbat;
     if (this->read_register_word_(BQ25628E_REG_VBAT_ADC, raw_vbat)) {
-      float vbat = raw_vbat * VBAT_ADC_STEP;
-      ESP_LOGD(TAG, "VBAT raw: 0x%04X, value: %.2f V", raw_vbat, vbat);
+      uint16_t vbat_adc = (raw_vbat >> 1) & 0x0FFF;  // Bits 12:1, 12-bit value
+      float vbat = vbat_adc * VBAT_ADC_STEP;
+      ESP_LOGD(TAG, "VBAT raw: 0x%04X, ADC: %d, value: %.2f V", raw_vbat, vbat_adc, vbat);
       this->battery_voltage_sensor_->publish_state(vbat);
     } else {
       ESP_LOGW(TAG, "Failed to read VBAT");
     }
   }
   
-  // Read and publish VSYS (system voltage) - datasheet: 1.99mV per LSB, 16-bit
+  // Read and publish VSYS (system voltage) - datasheet: 1.99mV per LSB, bits 12:1
   if (this->system_voltage_sensor_ != nullptr) {
     uint16_t raw_vsys;
     if (this->read_register_word_(BQ25628E_REG_VSYS_ADC, raw_vsys)) {
-      float vsys = raw_vsys * VSYS_ADC_STEP;
-      ESP_LOGD(TAG, "VSYS raw: 0x%04X, value: %.2f V", raw_vsys, vsys);
+      uint16_t vsys_adc = (raw_vsys >> 1) & 0x0FFF;  // Bits 12:1, 12-bit value
+      float vsys = vsys_adc * VSYS_ADC_STEP;
+      ESP_LOGD(TAG, "VSYS raw: 0x%04X, ADC: %d, value: %.2f V", raw_vsys, vsys_adc, vsys);
       this->system_voltage_sensor_->publish_state(vsys);
     } else {
       ESP_LOGW(TAG, "Failed to read VSYS");
     }
   }
   
-  // Read and publish IBAT (charge current) - datasheet: 4mA per LSB, 16-bit, signed
+  // Read and publish IBAT (charge current) - datasheet: 4mA per LSB, bits 15:2, signed
   if (this->charge_current_sensor_ != nullptr) {
     uint16_t raw_ibat;
     if (this->read_register_word_(BQ25628E_REG_IBAT_ADC, raw_ibat)) {
-      // Signed 16-bit value
-      int16_t signed_ibat = (int16_t)raw_ibat;
+      // Bits 15:2, 14-bit value, then sign-extend to 16-bit signed
+      uint16_t ibat_adc = (raw_ibat >> 2) & 0x3FFF;
+      int16_t signed_ibat = (int16_t)(ibat_adc << 2) >> 2;  // Sign extend from bit 13
       float ibat = signed_ibat * IBAT_ADC_STEP;
-      ESP_LOGD(TAG, "IBAT raw: 0x%04X, signed: %d, value: %.3f A", raw_ibat, signed_ibat, ibat);
+      ESP_LOGD(TAG, "IBAT raw: 0x%04X, ADC: %d, signed: %d, value: %.3f A", raw_ibat, ibat_adc, signed_ibat, ibat);
       this->charge_current_sensor_->publish_state(ibat);
     } else {
       ESP_LOGW(TAG, "Failed to read IBAT");
     }
   }
   
-  // Read and publish IBUS (input current) - datasheet: 2mA per LSB, 16-bit, signed
+  // Read and publish IBUS (input current) - datasheet: 2mA per LSB, bits 15:1, signed
   if (this->input_current_sensor_ != nullptr) {
     uint16_t raw_ibus;
     if (this->read_register_word_(BQ25628E_REG_IBUS_ADC, raw_ibus)) {
-      int16_t signed_ibus = (int16_t)raw_ibus;
+      // Bits 15:1, 15-bit value, then sign-extend to 16-bit signed
+      uint16_t ibus_adc = (raw_ibus >> 1) & 0x7FFF;
+      int16_t signed_ibus = (int16_t)(ibus_adc << 1) >> 1;  // Sign extend from bit 14
       float ibus = signed_ibus * IBUS_ADC_STEP;
-      ESP_LOGD(TAG, "IBUS raw: 0x%04X, signed: %d, value: %.3f A", raw_ibus, signed_ibus, ibus);
+      ESP_LOGD(TAG, "IBUS raw: 0x%04X, ADC: %d, signed: %d, value: %.3f A", raw_ibus, ibus_adc, signed_ibus, ibus);
       this->input_current_sensor_->publish_state(ibus);
     } else {
       ESP_LOGW(TAG, "Failed to read IBUS");
     }
   }
   
-  // Read and publish TS temperature - datasheet: 0.9765625mV per LSB, 16-bit
+  // Read and publish TS temperature - datasheet: 0.9765625mV per LSB, bits 11:0
   if (this->ts_temperature_sensor_ != nullptr) {
     uint16_t raw_ts;
     if (this->read_register_word_(BQ25628E_REG_TS_ADC, raw_ts)) {
-      float ts_voltage = raw_ts * TS_ADC_STEP;
-      ESP_LOGD(TAG, "TS raw: 0x%04X, voltage: %.3f V", raw_ts, ts_voltage);
+      uint16_t ts_adc = raw_ts & 0x0FFF;  // Bits 11:0, 12-bit value
+      float ts_voltage = ts_adc * TS_ADC_STEP;
+      ESP_LOGD(TAG, "TS raw: 0x%04X, ADC: %d, voltage: %.3f V", raw_ts, ts_adc, ts_voltage);
       this->ts_temperature_sensor_->publish_state(ts_voltage);
     } else {
       ESP_LOGW(TAG, "Failed to read TS");
     }
   }
   
-  // Read and publish die temperature - datasheet: 0.5C per LSB, -40C offset, 16-bit
+  // Read and publish die temperature - datasheet: 0.5C per LSB, -40C offset, bits 11:0
   if (this->die_temperature_sensor_ != nullptr) {
     uint16_t raw_tdie;
     if (this->read_register_word_(BQ25628E_REG_TDIE_ADC, raw_tdie)) {
-      float tdie = (raw_tdie * TDIE_ADC_STEP) - TDIE_ADC_OFFSET;
-      ESP_LOGD(TAG, "TDIE raw: 0x%04X, temperature: %.1f C", raw_tdie, tdie);
+      uint16_t tdie_adc = raw_tdie & 0x0FFF;  // Bits 11:0, 12-bit value
+      float tdie = (tdie_adc * TDIE_ADC_STEP) - TDIE_ADC_OFFSET;
+      ESP_LOGD(TAG, "TDIE raw: 0x%04X, ADC: %d, temperature: %.1f C", raw_tdie, tdie_adc, tdie);
       this->die_temperature_sensor_->publish_state(tdie);
     } else {
       ESP_LOGW(TAG, "Failed to read TDIE");
