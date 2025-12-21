@@ -65,8 +65,8 @@ void MAX17260Component::update() {
     uint16_t raw_soc;
     if (this->read_register_word_(MAX17260_REG_REPSOC, raw_soc)) {
       float soc = (raw_soc >> 8) * PERCENT_SCALE;  // Upper byte only
+      ESP_LOGD(TAG, "SOC raw: 0x%04X, upper byte: %d, value: %.1f %%", raw_soc, (raw_soc >> 8), soc);
       this->soc_sensor_->publish_state(soc);
-      ESP_LOGD(TAG, "SOC: %.1f %%", soc);
     }
   }
   
@@ -97,8 +97,8 @@ void MAX17260Component::update() {
       // Signed 16-bit value
       int16_t signed_temp = (int16_t)raw_temp;
       float temperature = signed_temp * TEMP_SCALE;
+      ESP_LOGD(TAG, "Temperature raw: 0x%04X, signed: %d, value: %.1f °C", raw_temp, signed_temp, temperature);
       this->temperature_sensor_->publish_state(temperature);
-      ESP_LOGD(TAG, "Temperature: %.1f °C", temperature);
     }
   }
 }

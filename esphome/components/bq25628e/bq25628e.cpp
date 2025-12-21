@@ -98,8 +98,10 @@ bool BQ25628EComponent::read_adc_values_() {
     uint16_t raw_vbus;
     if (this->read_register_word_(BQ25628E_REG_VBUS_ADC, raw_vbus)) {
       float vbus = raw_vbus * VBUS_ADC_STEP;
+      ESP_LOGD(TAG, "VBUS raw: 0x%04X, value: %.2f V", raw_vbus, vbus);
       this->bus_voltage_sensor_->publish_state(vbus);
-      ESP_LOGD(TAG, "VBUS: %.2f V", vbus);
+    } else {
+      ESP_LOGW(TAG, "Failed to read VBUS");
     }
   }
   
@@ -108,8 +110,10 @@ bool BQ25628EComponent::read_adc_values_() {
     uint16_t raw_vbat;
     if (this->read_register_word_(BQ25628E_REG_VBAT_ADC, raw_vbat)) {
       float vbat = raw_vbat * VBAT_ADC_STEP;
+      ESP_LOGD(TAG, "VBAT raw: 0x%04X, value: %.2f V", raw_vbat, vbat);
       this->battery_voltage_sensor_->publish_state(vbat);
-      ESP_LOGD(TAG, "VBAT: %.2f V", vbat);
+    } else {
+      ESP_LOGW(TAG, "Failed to read VBAT");
     }
   }
   
@@ -118,8 +122,10 @@ bool BQ25628EComponent::read_adc_values_() {
     uint16_t raw_vsys;
     if (this->read_register_word_(BQ25628E_REG_VSYS_ADC, raw_vsys)) {
       float vsys = raw_vsys * VSYS_ADC_STEP;
+      ESP_LOGD(TAG, "VSYS raw: 0x%04X, value: %.2f V", raw_vsys, vsys);
       this->system_voltage_sensor_->publish_state(vsys);
-      ESP_LOGD(TAG, "VSYS: %.2f V", vsys);
+    } else {
+      ESP_LOGW(TAG, "Failed to read VSYS");
     }
   }
   
@@ -130,8 +136,10 @@ bool BQ25628EComponent::read_adc_values_() {
       // Signed 16-bit value
       int16_t signed_ibat = (int16_t)raw_ibat;
       float ibat = signed_ibat * IBAT_ADC_STEP;
+      ESP_LOGD(TAG, "IBAT raw: 0x%04X, signed: %d, value: %.3f A", raw_ibat, signed_ibat, ibat);
       this->charge_current_sensor_->publish_state(ibat);
-      ESP_LOGD(TAG, "IBAT: %.3f A", ibat);
+    } else {
+      ESP_LOGW(TAG, "Failed to read IBAT");
     }
   }
   
