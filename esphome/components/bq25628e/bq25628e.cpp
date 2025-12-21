@@ -32,11 +32,21 @@ void BQ25628EComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  Charge Current Limit: %.2f A", this->charge_current_limit_);
   ESP_LOGCONFIG(TAG, "  Charge Voltage Limit: %.2f V", this->charge_voltage_limit_);
   ESP_LOGCONFIG(TAG, "  Input Current Limit: %.2f A", this->input_current_limit_);
+  ESP_LOGCONFIG(TAG, "  Input Voltage Limit: %.2f V", this->input_voltage_limit_);
+  ESP_LOGCONFIG(TAG, "  Minimum System Voltage: %.2f V", this->minimum_system_voltage_);
+  ESP_LOGCONFIG(TAG, "  Pre-charge Current: %.3f A", this->precharge_current_);
+  ESP_LOGCONFIG(TAG, "  Termination Current: %.3f A", this->termination_current_);
+  ESP_LOGCONFIG(TAG, "  Termination Enabled: %s", this->termination_enabled_ ? "YES" : "NO");
+  ESP_LOGCONFIG(TAG, "  VINDPM Battery Tracking: %s", this->vindpm_battery_tracking_ ? "YES" : "NO");
+  ESP_LOGCONFIG(TAG, "  Thermal Regulation: %dC", this->thermal_regulation_threshold_);
   
   LOG_SENSOR("  ", "Bus Voltage", this->bus_voltage_sensor_);
   LOG_SENSOR("  ", "Battery Voltage", this->battery_voltage_sensor_);
   LOG_SENSOR("  ", "Charge Current", this->charge_current_sensor_);
   LOG_SENSOR("  ", "System Voltage", this->system_voltage_sensor_);
+  LOG_SENSOR("  ", "Input Current", this->input_current_sensor_);
+  LOG_SENSOR("  ", "TS Temperature", this->ts_temperature_sensor_);
+  LOG_SENSOR("  ", "Die Temperature", this->die_temperature_sensor_);
 }
 
 void BQ25628EComponent::update() {
@@ -48,7 +58,7 @@ void BQ25628EComponent::update() {
 }
 
 bool BQ25628EComponent::configure_charger_() {
-  // Set charge current limit (datasheet: 50mA to 3000mA, step 50mA)
+  // Set charge current limit (datasheet: 40mA to 2000mA, step 40mA)
   uint8_t ichg_val = (uint8_t)((this->charge_current_limit_ - ICHG_MIN) / ICHG_STEP);
   if (!this->write_register_byte_(BQ25628E_REG_ICHG_CTRL, ichg_val)) {
     ESP_LOGE(TAG, "Failed to set charge current limit");
@@ -56,7 +66,7 @@ bool BQ25628EComponent::configure_charger_() {
   }
   ESP_LOGD(TAG, "Charge current limit set to %.2f A", this->charge_current_limit_);
   
-  // Set charge voltage limit (datasheet: 3.84V to 4.624V, step 8mV)
+  // Set charge voltage limit (datasheet: 3.5V to 4.8V, step 10mV)
   uint8_t vbat_val = (uint8_t)((this->charge_voltage_limit_ - VBAT_MIN) / VBAT_STEP);
   if (!this->write_register_byte_(BQ25628E_REG_VBAT_CTRL, vbat_val)) {
     ESP_LOGE(TAG, "Failed to set charge voltage limit");
@@ -64,13 +74,90 @@ bool BQ25628EComponent::configure_charger_() {
   }
   ESP_LOGD(TAG, "Charge voltage limit set to %.2f V", this->charge_voltage_limit_);
   
-  // Set input current limit (datasheet: 100mA to 3200mA, step 100mA)
+  // Set input current limit (datasheet: 100mA to 3200mA, step 20mA)
   uint8_t iindpm_val = (uint8_t)((this->input_current_limit_ - IINDPM_MIN) / IINDPM_STEP);
   if (!this->write_register_byte_(BQ25628E_REG_IINDPM_CTRL, iindpm_val)) {
     ESP_LOGE(TAG, "Failed to set input current limit");
     return false;
   }
   ESP_LOGD(TAG, "Input current limit set to %.2f A", this->input_current_limit_);
+  
+  // Set input voltage limit (VINDPM) (datasheet: 3.8V to 16.8V, step 40mV)
+  uint8_t vindpm_val = (uint8_t)((this->input_voltage_limit_ - VINDPM_MIN) / VINDPM_STEP);
+  if (!this->write_register_byte_(BQ25628E_REG_VINDPM_CTRL, vindpm_val)) {
+    ESP_LOGE(TAG, "Failed to set input voltage limit");
+    return false;
+  }
+  ESP_LOGD(TAG, "Input voltage limit set to %.2f V", this->input_voltage_limit_);
+  
+  // Set minimum system voltage (datasheet: 2.56V to 3.84V, step 80mV, 16-bit little-endian)
+  uint16_t vsysmin_val = (uint16_t)((this->minimum_system_voltage_ - VSYSMIN_MIN) / VSYSMIN_STEP);
+  vsysmin_val = (vsysmin_val << 6) & 0x0FC0;  // VSYSMIN is bits 11:6 in 16-bit register
+  if (!this->write_register_word_(BQ25628E_REG_VSYSMIN_CTRL, vsysmin_val)) {
+    ESP_LOGE(TAG, "Failed to set minimum system voltage");
+    return false;
+  }
+  ESP_LOGD(TAG, "Minimum system voltage set to %.2f V", this->minimum_system_voltage_);
+  
+  // Set pre-charge current (datasheet: 10mA to 310mA, step 10mA, 16-bit little-endian)
+  uint16_t iprechg_val = (uint16_t)((this->precharge_current_ - IPRECHG_MIN) / IPRECHG_STEP);
+  iprechg_val = (iprechg_val << 3) & 0x00F8;  // IPRECHG is bits 7:3
+  if (!this->write_register_word_(BQ25628E_REG_IPRECHG_CTRL, iprechg_val)) {
+    ESP_LOGE(TAG, "Failed to set pre-charge current");
+    return false;
+  }
+  ESP_LOGD(TAG, "Pre-charge current set to %.3f A", this->precharge_current_);
+  
+  // Set termination current (datasheet: 5mA to 310mA, step 5mA, 16-bit little-endian)
+  uint16_t iterm_val = (uint16_t)((this->termination_current_ - ITERM_MIN) / ITERM_STEP);
+  iterm_val = (iterm_val << 2) & 0x00FC;  // ITERM is bits 7:2
+  if (!this->write_register_word_(BQ25628E_REG_ITERM_CTRL, iterm_val)) {
+    ESP_LOGE(TAG, "Failed to set termination current");
+    return false;
+  }
+  ESP_LOGD(TAG, "Termination current set to %.3f A", this->termination_current_);
+  
+  // Configure charge control register (REG0x14)
+  uint8_t chg_ctrl = 0;
+  if (this->termination_enabled_) {
+    chg_ctrl |= CHG_CTRL_EN_TERM;
+  }
+  if (this->vindpm_battery_tracking_) {
+    chg_ctrl |= CHG_CTRL_VINDPM_BAT_TRACK;
+  }
+  // VRECHG bit: 0 = 100mV, 1 = 200mV (use recharge_threshold_)
+  if (this->recharge_threshold_ > 0.15f) {
+    chg_ctrl |= CHG_CTRL_VRECHG_MASK;
+  }
+  if (!this->write_register_byte_(BQ25628E_REG_CHG_CTRL, chg_ctrl)) {
+    ESP_LOGE(TAG, "Failed to configure charge control");
+    return false;
+  }
+  ESP_LOGD(TAG, "Charge control configured: term=%d, vindpm_track=%d, vrechg=%.0fmV",
+           this->termination_enabled_, this->vindpm_battery_tracking_,
+           this->recharge_threshold_ * 1000);
+  
+  // Configure charger control 0 (REG0x16) - enable charging, set watchdog
+  uint8_t charger_ctrl_0 = CHARGER_CTRL_0_EN_CHG;  // Enable charging by default
+  charger_ctrl_0 |= (this->watchdog_timeout_ & 0x03);  // Bits 1:0 = watchdog timeout
+  if (!this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, charger_ctrl_0)) {
+    ESP_LOGE(TAG, "Failed to configure charger control 0");
+    return false;
+  }
+  ESP_LOGD(TAG, "Charger control 0 configured: watchdog=%d", this->watchdog_timeout_);
+  
+  // Configure charger control 1 (REG0x17) - thermal regulation
+  uint8_t charger_ctrl_1 = 0;
+  if (this->thermal_regulation_threshold_ > 90) {
+    charger_ctrl_1 |= CHARGER_CTRL_1_TREG;  // 120C
+  }
+  // Default switching frequency and strength (bits 5:2)
+  charger_ctrl_1 |= 0x0C;  // SET_CONV_STRN = 11b (strong)
+  if (!this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_1, charger_ctrl_1)) {
+    ESP_LOGE(TAG, "Failed to configure charger control 1");
+    return false;
+  }
+  ESP_LOGD(TAG, "Thermal regulation threshold: %dC", this->thermal_regulation_threshold_);
   
   // Enable ADC: bit 7 = ADC_EN, bit 6 = ADC continuous mode
   if (!this->write_register_byte_(BQ25628E_REG_ADC_CTRL, 0xC0)) {
@@ -93,7 +180,7 @@ bool BQ25628EComponent::configure_charger_() {
 }
 
 bool BQ25628EComponent::read_adc_values_() {
-  // Read and publish VBUS (bus voltage) - datasheet: 1mV per LSB, 16-bit
+  // Read and publish VBUS (bus voltage) - datasheet: 3.97mV per LSB, 16-bit
   if (this->bus_voltage_sensor_ != nullptr) {
     uint16_t raw_vbus;
     if (this->read_register_word_(BQ25628E_REG_VBUS_ADC, raw_vbus)) {
@@ -105,7 +192,7 @@ bool BQ25628EComponent::read_adc_values_() {
     }
   }
   
-  // Read and publish VBAT (battery voltage) - datasheet: 1mV per LSB, 16-bit
+  // Read and publish VBAT (battery voltage) - datasheet: 1.99mV per LSB, 16-bit
   if (this->battery_voltage_sensor_ != nullptr) {
     uint16_t raw_vbat;
     if (this->read_register_word_(BQ25628E_REG_VBAT_ADC, raw_vbat)) {
@@ -117,7 +204,7 @@ bool BQ25628EComponent::read_adc_values_() {
     }
   }
   
-  // Read and publish VSYS (system voltage) - datasheet: 1mV per LSB, 16-bit
+  // Read and publish VSYS (system voltage) - datasheet: 1.99mV per LSB, 16-bit
   if (this->system_voltage_sensor_ != nullptr) {
     uint16_t raw_vsys;
     if (this->read_register_word_(BQ25628E_REG_VSYS_ADC, raw_vsys)) {
@@ -129,7 +216,7 @@ bool BQ25628EComponent::read_adc_values_() {
     }
   }
   
-  // Read and publish IBAT (charge current) - datasheet: 1mA per LSB, 16-bit, signed
+  // Read and publish IBAT (charge current) - datasheet: 4mA per LSB, 16-bit, signed
   if (this->charge_current_sensor_ != nullptr) {
     uint16_t raw_ibat;
     if (this->read_register_word_(BQ25628E_REG_IBAT_ADC, raw_ibat)) {
@@ -140,6 +227,43 @@ bool BQ25628EComponent::read_adc_values_() {
       this->charge_current_sensor_->publish_state(ibat);
     } else {
       ESP_LOGW(TAG, "Failed to read IBAT");
+    }
+  }
+  
+  // Read and publish IBUS (input current) - datasheet: 2mA per LSB, 16-bit, signed
+  if (this->input_current_sensor_ != nullptr) {
+    uint16_t raw_ibus;
+    if (this->read_register_word_(BQ25628E_REG_IBUS_ADC, raw_ibus)) {
+      int16_t signed_ibus = (int16_t)raw_ibus;
+      float ibus = signed_ibus * IBUS_ADC_STEP;
+      ESP_LOGD(TAG, "IBUS raw: 0x%04X, signed: %d, value: %.3f A", raw_ibus, signed_ibus, ibus);
+      this->input_current_sensor_->publish_state(ibus);
+    } else {
+      ESP_LOGW(TAG, "Failed to read IBUS");
+    }
+  }
+  
+  // Read and publish TS temperature - datasheet: 0.9765625mV per LSB, 16-bit
+  if (this->ts_temperature_sensor_ != nullptr) {
+    uint16_t raw_ts;
+    if (this->read_register_word_(BQ25628E_REG_TS_ADC, raw_ts)) {
+      float ts_voltage = raw_ts * TS_ADC_STEP;
+      ESP_LOGD(TAG, "TS raw: 0x%04X, voltage: %.3f V", raw_ts, ts_voltage);
+      this->ts_temperature_sensor_->publish_state(ts_voltage);
+    } else {
+      ESP_LOGW(TAG, "Failed to read TS");
+    }
+  }
+  
+  // Read and publish die temperature - datasheet: 0.5C per LSB, -40C offset, 16-bit
+  if (this->die_temperature_sensor_ != nullptr) {
+    uint16_t raw_tdie;
+    if (this->read_register_word_(BQ25628E_REG_TDIE_ADC, raw_tdie)) {
+      float tdie = (raw_tdie * TDIE_ADC_STEP) - TDIE_ADC_OFFSET;
+      ESP_LOGD(TAG, "TDIE raw: 0x%04X, temperature: %.1f C", raw_tdie, tdie);
+      this->die_temperature_sensor_->publish_state(tdie);
+    } else {
+      ESP_LOGW(TAG, "Failed to read TDIE");
     }
   }
   
@@ -209,6 +333,124 @@ bool BQ25628EComponent::set_input_current(float current_amps) {
     ESP_LOGI(TAG, "Input current limit set to %.2f A", current_amps);
   }
   return success;
+}
+
+bool BQ25628EComponent::set_input_voltage(float voltage_volts) {
+  if (voltage_volts < VINDPM_MIN || voltage_volts > VINDPM_MAX) {
+    ESP_LOGE(TAG, "Input voltage limit out of range: %.2f V", voltage_volts);
+    return false;
+  }
+  
+  uint8_t vindpm_val = (uint8_t)((voltage_volts - VINDPM_MIN) / VINDPM_STEP);
+  bool success = this->write_register_byte_(BQ25628E_REG_VINDPM_CTRL, vindpm_val);
+  if (success) {
+    this->input_voltage_limit_ = voltage_volts;
+    ESP_LOGI(TAG, "Input voltage limit set to %.2f V", voltage_volts);
+  }
+  return success;
+}
+
+bool BQ25628EComponent::set_hiz_mode(bool enabled) {
+  uint8_t reg_val;
+  if (!this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, reg_val)) {
+    return false;
+  }
+  
+  if (enabled) {
+    reg_val |= CHARGER_CTRL_0_EN_HIZ;
+  } else {
+    reg_val &= ~CHARGER_CTRL_0_EN_HIZ;
+  }
+  
+  bool success = this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, reg_val);
+  if (success) {
+    ESP_LOGI(TAG, "HIZ mode %s", enabled ? "enabled" : "disabled");
+  }
+  return success;
+}
+
+bool BQ25628EComponent::reset_watchdog() {
+  uint8_t reg_val;
+  if (!this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, reg_val)) {
+    return false;
+  }
+  
+  reg_val |= CHARGER_CTRL_0_WD_RST;  // Set watchdog reset bit
+  bool success = this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, reg_val);
+  if (success) {
+    ESP_LOGD(TAG, "Watchdog timer reset");
+  }
+  return success;
+}
+
+bool BQ25628EComponent::reset_registers() {
+  uint8_t reg_val;
+  if (!this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_1, reg_val)) {
+    return false;
+  }
+  
+  reg_val |= CHARGER_CTRL_1_REG_RST;  // Set register reset bit
+  bool success = this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_1, reg_val);
+  if (success) {
+    ESP_LOGI(TAG, "Registers reset to defaults");
+    delay(10);  // Wait for reset to complete
+    // Reconfigure with current settings
+    this->configure_charger_();
+  }
+  return success;
+}
+
+uint8_t BQ25628EComponent::get_charge_status() {
+  uint8_t status_reg;
+  if (!this->read_register_byte_(BQ25628E_REG_CHG_STATUS_1, status_reg)) {
+    return 0xFF;  // Error value
+  }
+  
+  uint8_t chg_stat = (status_reg & CHG_STATUS_1_CHG_STAT_MASK) >> 3;
+  return chg_stat;
+}
+
+bool BQ25628EComponent::is_in_thermal_regulation() {
+  uint8_t status_reg;
+  if (!this->read_register_byte_(BQ25628E_REG_CHG_STATUS_0, status_reg)) {
+    return false;
+  }
+  return (status_reg & 0x20) != 0;  // Bit 5: TREG_STAT
+}
+
+bool BQ25628EComponent::is_in_vindpm_regulation() {
+  uint8_t status_reg;
+  if (!this->read_register_byte_(BQ25628E_REG_CHG_STATUS_0, status_reg)) {
+    return false;
+  }
+  return (status_reg & 0x04) != 0;  // Bit 2: VINDPM_STAT
+}
+
+bool BQ25628EComponent::is_in_iindpm_regulation() {
+  uint8_t status_reg;
+  if (!this->read_register_byte_(BQ25628E_REG_CHG_STATUS_0, status_reg)) {
+    return false;
+  }
+  return (status_reg & 0x08) != 0;  // Bit 3: IINDPM_STAT
+}
+
+bool BQ25628EComponent::has_fault() {
+  uint8_t fault_reg;
+  if (!this->read_register_byte_(BQ25628E_REG_FAULT_STATUS_0, fault_reg)) {
+    return false;
+  }
+  return fault_reg != 0;  // Any non-zero bit indicates a fault
+}
+
+bool BQ25628EComponent::write_register_word_(uint8_t reg, uint16_t value) {
+  // Write little-endian (LSB first)
+  uint8_t lsb = value & 0xFF;
+  uint8_t msb = (value >> 8) & 0xFF;
+  if (!this->write_byte(reg, lsb) || !this->write_byte(reg + 1, msb)) {
+    ESP_LOGW(TAG, "Failed to write 16-bit register 0x%02X", reg);
+    return false;
+  }
+  return true;
 }
 
 bool BQ25628EComponent::write_register_byte_(uint8_t reg, uint8_t value) {
