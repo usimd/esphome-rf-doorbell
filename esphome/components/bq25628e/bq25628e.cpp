@@ -109,6 +109,17 @@ bool BQ25628EComponent::configure_charger_() {
   float vbusovp_threshold = 6.0f + (vbusovp_val * 0.04f);
   ESP_LOGD(TAG, "VBUS OVP threshold set to %.2f V", vbusovp_threshold);
   
+  // Read back to verify
+  uint16_t vbusovp_readback = 0;
+  if (this->read_register_word_(BQ25628E_REG_VBUSOVP_CTRL, &vbusovp_readback)) {
+    ESP_LOGD(TAG, "VBUS OVP register readback: 0x%04X (expected 0x00FA)", vbusovp_readback);
+    if (vbusovp_readback != vbusovp_word) {
+      ESP_LOGW(TAG, "VBUS OVP readback mismatch! Wrote 0x%04X, read 0x%04X", vbusovp_word, vbusovp_readback);
+    }
+  } else {
+    ESP_LOGW(TAG, "Failed to read back VBUS OVP register");
+  }
+  
   // Set minimum system voltage (datasheet: 2.56V to 3.84V, step 80mV, 16-bit little-endian)
   uint16_t vsysmin_val = (uint16_t)((this->minimum_system_voltage_ - VSYSMIN_MIN) / VSYSMIN_STEP);
   vsysmin_val = (vsysmin_val << 6) & 0x0FC0;  // VSYSMIN is bits 11:6 in 16-bit register
