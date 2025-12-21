@@ -17,6 +17,93 @@ void MAX17260Component::setup() {
     return;
   }
   
+  // Check if initialization is needed (bit 1 of Status = POR)
+  if (status & 0x0002) {
+    ESP_LOGI(TAG, "Power-on reset detected, initializing fuel gauge...");
+    
+    // Wait for FSTAT.DNR to clear (model loading complete)
+    uint16_t fstat;
+    int timeout = 100;
+    do {
+      delay(10);
+      if (!this->read_register_word_(0x3D, fstat)) {  // FSTAT register
+        ESP_LOGE(TAG, "Failed to read FSTAT");
+        break;
+      }
+    } while ((fstat & 0x0001) && timeout-- > 0);
+    
+    if (timeout <= 0) {
+      ESP_LOGW(TAG, "Timeout waiting for model load");
+    }
+    
+    // Store original HibCFG value
+    uint16_t hib_cfg;
+    if (!this->read_register_word_(0xBA, hib_cfg)) {  // HibCFG
+      ESP_LOGE(TAG, "Failed to read HibCFG");
+      this->mark_failed();
+      return;
+    }
+    
+    // Exit hibernate mode to enable writes
+    this->write_register_word_(0x60, 0x90);  // Soft-wakeup
+    this->write_register_word_(0xBA, 0x0000);  // Clear HibCFG
+    this->write_register_word_(0x60, 0x0000);  // Clear soft-wakeup
+    
+    // Write design capacity (330mAh with 25mΩ sense resistor)
+    if (!this->write_register_word_(0x18, DESIGN_CAP)) {
+      ESP_LOGE(TAG, "Failed to write DesignCap");
+    } else {
+      ESP_LOGI(TAG, "DesignCap set to %d (330mAh)", DESIGN_CAP);
+    }
+    
+    // Write IChgTerm (charge termination current: 20mA)
+    if (!this->write_register_word_(0x1E, ICHG_TERM)) {
+      ESP_LOGE(TAG, "Failed to write IChgTerm");
+    } else {
+      ESP_LOGI(TAG, "IChgTerm set to %d (20mA)", ICHG_TERM);
+    }
+    
+    // Write VEmpty (empty voltage)
+    if (!this->write_register_word_(0x3A, VEMPTY)) {
+      ESP_LOGE(TAG, "Failed to write VEmpty");
+    } else {
+      ESP_LOGI(TAG, "VEmpty set to 0x%04X", VEMPTY);
+    }
+    
+    // Write ModelCFG to refresh model
+    if (!this->write_register_word_(0xDB, 0x8400)) {  // Refresh=1, R100=4 (for 330mAh)
+      ESP_LOGE(TAG, "Failed to write ModelCFG");
+    } else {
+      ESP_LOGI(TAG, "ModelCFG refresh initiated");
+    }
+    
+    // Wait for model refresh to complete (up to 710ms)
+    timeout = 100;
+    uint16_t model_cfg;
+    do {
+      delay(10);
+      if (!this->read_register_word_(0xDB, model_cfg)) {
+        break;
+      }
+    } while ((model_cfg & 0x8000) && timeout-- > 0);
+    
+    if (timeout > 0) {
+      ESP_LOGI(TAG, "Model refresh complete");
+    } else {
+      ESP_LOGW(TAG, "Model refresh timeout");
+    }
+    
+    // Restore original HibCFG
+    this->write_register_word_(0xBA, hib_cfg);
+    
+    // Clear POR bit
+    this->write_register_word_(MAX17260_REG_STATUS, status & 0xFFFD);
+    
+    ESP_LOGI(TAG, "MAX17260 initialization complete");
+  } else {
+    ESP_LOGI(TAG, "MAX17260 already initialized");
+  }
+  
   ESP_LOGCONFIG(TAG, "MAX17260 setup complete");
 }
 
@@ -48,13 +135,13 @@ void MAX17260Component::update() {
     }
   }
   
-  // Read and publish current (datasheet: depends on sense resistor, assuming 5mΩ)
+  // Read and publish current (datasheet: depends on sense resistor, 25mΩ)
   if (this->current_sensor_ != nullptr) {
     uint16_t raw_current;
     if (this->read_register_word_(MAX17260_REG_AVGCURRENT, raw_current)) {
       // Signed 16-bit value
       int16_t signed_current = (int16_t)raw_current;
-      float current = signed_current * CURRENT_SCALE_5mOhm;
+      float current = signed_current * CURRENT_SCALE_25mOhm;
       this->current_sensor_->publish_state(current);
       ESP_LOGD(TAG, "Current: %.3f A", current);
     }
@@ -111,6 +198,16 @@ bool MAX17260Component::read_register_word_(uint8_t reg, uint16_t &value) {
   }
   // LSB first (little-endian)
   value = (msb << 8) | lsb;
+  return true;
+}
+
+bool MAX17260Component::write_register_word_(uint8_t reg, uint16_t value) {
+  uint8_t lsb = value & 0xFF;
+  uint8_t msb = (value >> 8) & 0xFF;
+  if (!this->write_byte(reg, lsb) || !this->write_byte(reg + 1, msb)) {
+    ESP_LOGW(TAG, "Failed to write 16-bit register 0x%02X", reg);
+    return false;
+  }
   return true;
 }
 

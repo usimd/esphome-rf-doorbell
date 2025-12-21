@@ -20,10 +20,15 @@ static const uint8_t MAX17260_REG_TEMP = 0x08;        // Temperature
 
 // Scaling factors from datasheet
 static const float VCELL_SCALE = 0.078125e-3f;  // 78.125µV per LSB
-static const float CURRENT_SCALE_5mOhm = 0.3125e-3f;  // 1.5625μV/RSENSE, RSENSE=5mΩ -> 0.3125mA per LSB
+static const float CURRENT_SCALE_25mOhm = 0.0625e-3f;  // 1.5625μV/RSENSE, RSENSE=25mΩ -> 0.0625mA per LSB
 static const float PERCENT_SCALE = 1.0f;                // 1% per LSB (upper byte)
 static const float TIME_SCALE = 5.625f;                 // 5.625s per LSB
 static const float TEMP_SCALE = 1.0f / 256.0f;          // 1/256°C per LSB
+
+// Battery configuration
+static const uint16_t DESIGN_CAP = 1650;  // 330mAh / (5μVh/25mΩ) = 1650
+static const uint16_t ICHG_TERM = 33;     // 33 = 20mA termination current (20mA / 0.0625mA)
+static const uint16_t VEMPTY = 0xA561;    // VE=3.3V, VR=3.88V (default for Li-ion)
 
 class MAX17260Component : public PollingComponent, public i2c::I2CDevice {
  public:
@@ -48,6 +53,7 @@ class MAX17260Component : public PollingComponent, public i2c::I2CDevice {
   sensor::Sensor *temperature_sensor_{nullptr};
 
   bool read_register_word_(uint8_t reg, uint16_t &value);
+  bool write_register_word_(uint8_t reg, uint16_t value);
 };
 
 }  // namespace max17260

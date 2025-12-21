@@ -275,6 +275,20 @@ bool BQ25628EComponent::read_adc_values_() {
     }
   }
   
+  // Read fault status register for debugging
+  uint8_t fault_reg;
+  if (this->read_register_byte_(BQ25628E_REG_FAULT_STATUS_0, fault_reg)) {
+    if (fault_reg != 0) {
+      ESP_LOGW(TAG, "Fault Status: 0x%02X - VBUS_OVP:%d VAC_OVP:%d TSHUT:%d BATOVP:%d SYSOVP:%d",
+               fault_reg,
+               (fault_reg & 0x80) ? 1 : 0,  // Bit 7: VBUS OVP
+               (fault_reg & 0x40) ? 1 : 0,  // Bit 6: VAC OVP
+               (fault_reg & 0x20) ? 1 : 0,  // Bit 5: Thermal shutdown
+               (fault_reg & 0x08) ? 1 : 0,  // Bit 3: Battery OVP
+               (fault_reg & 0x01) ? 1 : 0); // Bit 0: System OVP
+    }
+  }
+  
   return true;
 }
 
