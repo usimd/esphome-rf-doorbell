@@ -153,6 +153,9 @@ class BQ25628EComponent : public PollingComponent, public i2c::I2CDevice {
   bool is_in_vindpm_regulation();
   bool is_in_iindpm_regulation();
   bool has_fault();
+  
+  // Public register access for YAML lambdas
+  bool read_register_byte(uint8_t reg, uint8_t *value) { return read_register_byte_(reg, *value); }
 
  protected:
   sensor::Sensor *bus_voltage_sensor_{nullptr};
