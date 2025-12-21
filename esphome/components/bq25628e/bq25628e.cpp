@@ -120,6 +120,18 @@ bool BQ25628EComponent::configure_charger_() {
     ESP_LOGW(TAG, "Failed to read back VBUS OVP register");
   }
   
+  // Diagnostic: Read registers 0x0B, 0x0C, 0x0D to identify potential VAC_OVP or other OVP settings
+  uint16_t reg_0x0B = 0, reg_0x0C = 0, reg_0x0D = 0;
+  if (this->read_register_word_(0x0B, reg_0x0B)) {
+    ESP_LOGD(TAG, "Register 0x0B readback: 0x%04X", reg_0x0B);
+  }
+  if (this->read_register_word_(0x0C, reg_0x0C)) {
+    ESP_LOGD(TAG, "Register 0x0C readback: 0x%04X", reg_0x0C);
+  }
+  if (this->read_register_word_(0x0D, reg_0x0D)) {
+    ESP_LOGD(TAG, "Register 0x0D readback: 0x%04X", reg_0x0D);
+  }
+  
   // Set minimum system voltage (datasheet: 2.56V to 3.84V, step 80mV, 16-bit little-endian)
   uint16_t vsysmin_val = (uint16_t)((this->minimum_system_voltage_ - VSYSMIN_MIN) / VSYSMIN_STEP);
   vsysmin_val = (vsysmin_val << 6) & 0x0FC0;  // VSYSMIN is bits 11:6 in 16-bit register
