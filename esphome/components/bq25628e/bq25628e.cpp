@@ -90,6 +90,16 @@ bool BQ25628EComponent::configure_charger_() {
   }
   ESP_LOGD(TAG, "Input voltage limit set to %.2f V", this->input_voltage_limit_);
   
+  // Set VBUS overvoltage protection threshold (REG0x0A: 6V to 16.76V, step 40mV)
+  // Default is ~14V which is too low for 14.3V bench supply - set to 16V
+  uint8_t vbusovp_val = (uint8_t)((16.0f - 6.0f) / 0.04f);  // 250 steps for 16V
+  if (!this->write_register_byte_(BQ25628E_REG_VBUSOVP_CTRL, vbusovp_val)) {
+    ESP_LOGE(TAG, "Failed to set VBUS OVP threshold");
+    return false;
+  }
+  float vbusovp_threshold = 6.0f + (vbusovp_val * 0.04f);
+  ESP_LOGD(TAG, "VBUS OVP threshold set to %.2f V", vbusovp_threshold);
+  
   // Set minimum system voltage (datasheet: 2.56V to 3.84V, step 80mV, 16-bit little-endian)
   uint16_t vsysmin_val = (uint16_t)((this->minimum_system_voltage_ - VSYSMIN_MIN) / VSYSMIN_STEP);
   vsysmin_val = (vsysmin_val << 6) & 0x0FC0;  // VSYSMIN is bits 11:6 in 16-bit register

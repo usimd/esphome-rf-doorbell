@@ -12,6 +12,7 @@ static const uint8_t BQ25628E_REG_ICHG_CTRL = 0x02;  // Charge Current Limit
 static const uint8_t BQ25628E_REG_VBAT_CTRL = 0x04;  // Charge Voltage Limit
 static const uint8_t BQ25628E_REG_IINDPM_CTRL = 0x06;  // Input Current Limit
 static const uint8_t BQ25628E_REG_VINDPM_CTRL = 0x08;  // Input Voltage Limit
+static const uint8_t BQ25628E_REG_VBUSOVP_CTRL = 0x0A;  // VBUS OVP Threshold
 static const uint8_t BQ25628E_REG_VSYSMIN_CTRL = 0x0E;  // Minimal System Voltage (2 bytes)
 static const uint8_t BQ25628E_REG_IPRECHG_CTRL = 0x10;  // Pre-charge Control (2 bytes)
 static const uint8_t BQ25628E_REG_ITERM_CTRL = 0x12;  // Termination Control (2 bytes)
