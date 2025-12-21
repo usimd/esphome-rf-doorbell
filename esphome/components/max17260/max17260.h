@@ -27,7 +27,7 @@ static const float TEMP_SCALE = 1.0f / 256.0f;          // 1/256°C per LSB
 
 // Battery configuration
 static const uint16_t DESIGN_CAP = 1650;  // 330mAh / (5μVh/25mΩ) = 1650
-static const uint16_t ICHG_TERM = 33;     // 33 = 20mA termination current (20mA / 0.0625mA)
+static const uint16_t ICHG_TERM = 320;    // 20mA × 25mΩ / 1.5625μV = 320
 static const uint16_t VEMPTY = 0xA561;    // VE=3.3V, VR=3.88V (default for Li-ion)
 
 class MAX17260Component : public PollingComponent, public i2c::I2CDevice {
