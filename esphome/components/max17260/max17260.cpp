@@ -60,11 +60,11 @@ void MAX17260Component::update() {
     }
   }
   
-  // Read and publish state of charge (datasheet: 1/256% per LSB)
+  // Read and publish state of charge (datasheet: 1% per LSB, use upper byte)
   if (this->soc_sensor_ != nullptr) {
     uint16_t raw_soc;
     if (this->read_register_word_(MAX17260_REG_REPSOC, raw_soc)) {
-      float soc = raw_soc * PERCENT_SCALE;
+      float soc = (raw_soc >> 8) * PERCENT_SCALE;  // Upper byte only
       this->soc_sensor_->publish_state(soc);
       ESP_LOGD(TAG, "SOC: %.1f %%", soc);
     }

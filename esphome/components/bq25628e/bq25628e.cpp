@@ -72,15 +72,22 @@ bool BQ25628EComponent::configure_charger_() {
   }
   ESP_LOGD(TAG, "Input current limit set to %.2f A", this->input_current_limit_);
   
-  // Enable ADC for continuous conversion (bit 7 of ADC_CTRL register)
-  if (!this->write_register_byte_(BQ25628E_REG_ADC_CTRL, 0x80)) {
+  // Enable ADC: bit 7 = ADC_EN, bit 6 = ADC continuous mode
+  if (!this->write_register_byte_(BQ25628E_REG_ADC_CTRL, 0xC0)) {
     ESP_LOGW(TAG, "Failed to enable ADC");
+    return false;
   }
   
-  // Disable no ADC functions (all ADC channels enabled)
+  // Enable all ADC channels (write 0x00 to disable register)
   if (!this->write_register_byte_(BQ25628E_REG_ADC_DIS, 0x00)) {
     ESP_LOGW(TAG, "Failed to configure ADC channels");
+    return false;
   }
+  
+  // Wait for ADC to be ready
+  delay(50);
+  
+  ESP_LOGD(TAG, "ADC enabled and configured");
   
   return true;
 }
@@ -213,12 +220,12 @@ bool BQ25628EComponent::read_register_byte_(uint8_t reg, uint8_t &value) {
 }
 
 bool BQ25628EComponent::read_register_word_(uint8_t reg, uint16_t &value) {
-  uint8_t msb, lsb;
-  if (!this->read_byte(reg, &msb) || !this->read_byte(reg + 1, &lsb)) {
+  uint8_t lsb, msb;
+  if (!this->read_byte(reg, &lsb) || !this->read_byte(reg + 1, &msb)) {
     ESP_LOGW(TAG, "Failed to read 16-bit register 0x%02X", reg);
     return false;
   }
-  // MSB first (big-endian)
+  // LSB first (little-endian per datasheet)
   value = (msb << 8) | lsb;
   return true;
 }

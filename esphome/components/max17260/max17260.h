@@ -21,7 +21,7 @@ static const uint8_t MAX17260_REG_TEMP = 0x08;        // Temperature
 // Scaling factors from datasheet
 static const float VCELL_SCALE = 0.078125e-3f;  // 78.125µV per LSB
 static const float CURRENT_SCALE_5mOhm = 0.15625e-3f;  // For 5mΩ sense resistor
-static const float PERCENT_SCALE = 1.0f / 256.0f;      // 1/256% per LSB
+static const float PERCENT_SCALE = 1.0f;                // 1% per LSB (upper byte)
 static const float TIME_SCALE = 5.625f;                 // 5.625s per LSB
 static const float TEMP_SCALE = 1.0f / 256.0f;          // 1/256°C per LSB
 
