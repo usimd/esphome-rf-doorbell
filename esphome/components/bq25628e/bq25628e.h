@@ -44,7 +44,7 @@ static const float IBAT_ADC_STEP = 0.004f;    // 4mA per LSB (REG0x2A)
 static const float IBUS_ADC_STEP = 0.002f;    // 2mA per LSB (REG0x28)
 static const float TS_ADC_STEP = 0.0009765625f;  // 0.976562mV per LSB (REG0x34)
 static const float TDIE_ADC_STEP = 0.5f;      // 0.5°C per LSB (REG0x36)
-static const float TDIE_ADC_OFFSET = 50.0f;   // -50°C offset (per SLUSFA4C datasheet)
+static const float TDIE_ADC_OFFSET = 40.0f;   // -40°C offset (per SLUSFA4C datasheet Table 8-41)
 
 // Charge current limit: 40mA to 2000mA, step 40mA
 static const float ICHG_STEP = 0.04f;  // 40mA

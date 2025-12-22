@@ -50,6 +50,9 @@ void BQ25628EComponent::dump_config() {
 }
 
 void BQ25628EComponent::update() {
+  // Reset watchdog to prevent expiration (which disables charging)
+  this->reset_watchdog();
+  
   // Read ADC values
   if (!this->read_adc_values_()) {
     ESP_LOGW(TAG, "Failed to read ADC values");
@@ -331,18 +334,20 @@ bool BQ25628EComponent::read_adc_values_() {
   }
   
   // Read charger status register 0x1D for DPM and regulation info
+  // CORRECTED per datasheet Table 8-23: bit positions were completely wrong!
   uint16_t status_0_reg;
   if (this->read_register_word_(BQ25628E_REG_CHG_STATUS_0, status_0_reg)) {
     uint8_t status_0_byte = status_0_reg & 0xFF;
-    bool iindpm_stat = status_0_byte & 0x80;  // Bit 7: IINDPM regulation active
-    bool vindpm_stat = status_0_byte & 0x40;  // Bit 6: VINDPM regulation active
-    bool wd_stat = status_0_byte & 0x20;      // Bit 5: Watchdog expired
-    bool poorsrc_stat = status_0_byte & 0x10; // Bit 4: Poor source detected
-    bool pg_stat = status_0_byte & 0x08;      // Bit 3: Power good
-    bool ac_stat = status_0_byte & 0x04;      // Bit 2: AC adapter present
-    bool treg_stat = status_0_byte & 0x01;    // Bit 0: Thermal regulation active
-    ESP_LOGD(TAG, "Status0 [0x1D=0x%02X]: IINDPM:%d VINDPM:%d WD:%d POORSRC:%d PG:%d AC:%d TREG:%d",
-             status_0_byte, iindpm_stat, vindpm_stat, wd_stat, poorsrc_stat, pg_stat, ac_stat, treg_stat);
+    bool adc_done_stat = status_0_byte & 0x40;  // Bit 6: ADC conversion complete (one-shot mode)
+    bool treg_stat = status_0_byte & 0x20;      // Bit 5: Thermal regulation active
+    bool vsys_stat = status_0_byte & 0x10;      // Bit 4: VSYSMIN regulation (BAT < VSYSMIN)
+    bool iindpm_stat = status_0_byte & 0x08;    // Bit 3: IINDPM/ILIM regulation active
+    bool vindpm_stat = status_0_byte & 0x04;    // Bit 2: VINDPM regulation active
+    bool safety_tmr_stat = status_0_byte & 0x02;// Bit 1: Safety timer expired
+    bool wd_stat = status_0_byte & 0x01;        // Bit 0: Watchdog expired
+    ESP_LOGD(TAG, "Status0 [0x1D=0x%02X]: ADC_DONE:%d TREG:%d VSYS:%d IINDPM:%d VINDPM:%d SAFETY_TMR:%d WD:%d",
+             status_0_byte, adc_done_stat, treg_stat, vsys_stat, iindpm_stat, vindpm_stat, safety_tmr_stat, wd_stat);
+    ESP_LOGW(TAG, "⚠️ THERMAL_REG=%d WATCHDOG=%d SAFETY_TMR=%d - Check for faults!", treg_stat, wd_stat, safety_tmr_stat);
   }
 
   // Read charger status register (REG0x1E) for VBUS and CHG status
@@ -355,6 +360,13 @@ bool BQ25628EComponent::read_adc_values_() {
                                   "Unknown Adapter", "Reserved", "Reserved", "Reserved"};
     const char* chg_status[] = {"Not Charging", "CC/Trickle/Precharge", "CV Taper", "Top-off"};
     ESP_LOGD(TAG, "Status1 [0x1E]: VBUS=%s, CHG=%s", vbus_status[vbus_stat], chg_status[chg_stat]);
+    
+    // Detect poor source lockout and warn user
+    if (vbus_stat == 0) {  // VBUS_STAT = 000b = "No Power"
+      ESP_LOGW(TAG, "⚠️ POOR SOURCE LOCKOUT! VBUS failed qualification (voltage drop <3.6V when loaded)");
+      ESP_LOGW(TAG, "   Possible causes: Polyfuse tripped, weak supply, bad connection");
+      ESP_LOGW(TAG, "   Try: Press 'Recover from Poor Source Lockout' button or replace polyfuse F1");
+    }
   }
 
   // Read fault status register for debugging (REG0x1F)
