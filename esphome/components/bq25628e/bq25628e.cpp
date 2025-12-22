@@ -548,13 +548,15 @@ bool BQ25628EComponent::read_register_byte_(uint8_t reg, uint8_t &value) {
 }
 
 bool BQ25628EComponent::read_register_word_(uint8_t reg, uint16_t &value) {
-  uint8_t lsb, msb;
-  if (!this->read_byte(reg, &lsb) || !this->read_byte(reg + 1, &msb)) {
+  // BQ25628E requires atomic 16-bit read in single I2C transaction
+  // Separate read_byte calls may read wrong registers on some I2C implementations
+  uint8_t data[2];
+  if (!this->read_bytes(reg, data, 2)) {
     ESP_LOGW(TAG, "Failed to read 16-bit register 0x%02X", reg);
     return false;
   }
-  // LSB first (little-endian per datasheet)
-  value = (msb << 8) | lsb;
+  // Little-endian: LSB at data[0], MSB at data[1]
+  value = (static_cast<uint16_t>(data[1]) << 8) | data[0];
   return true;
 }
 
