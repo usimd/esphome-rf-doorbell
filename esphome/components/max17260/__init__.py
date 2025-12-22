@@ -11,6 +11,7 @@ from esphome.const import (
     DEVICE_CLASS_TEMPERATURE,
     DEVICE_CLASS_BATTERY,
     STATE_CLASS_MEASUREMENT,
+    STATE_CLASS_TOTAL_INCREASING,
     UNIT_VOLT,
     UNIT_AMPERE,
     UNIT_CELSIUS,
@@ -23,8 +24,13 @@ CODEOWNERS = ["@usimd"]
 
 CONF_MAX17260_ID = "max17260_id"
 CONF_STATE_OF_CHARGE = "state_of_charge"
+CONF_REMAINING_CAPACITY = "remaining_capacity"
+CONF_FULL_CAPACITY = "full_capacity"
+CONF_CYCLE_COUNT = "cycle_count"
 CONF_TIME_TO_EMPTY = "time_to_empty"
 CONF_TIME_TO_FULL = "time_to_full"
+
+UNIT_MILLIAMPERE_HOUR = "mAh"
 
 max17260_ns = cg.esphome_ns.namespace("max17260")
 MAX17260Component = max17260_ns.class_(
@@ -43,7 +49,7 @@ CONFIG_SCHEMA = (
             ),
             cv.Optional(CONF_CURRENT): sensor.sensor_schema(
                 unit_of_measurement=UNIT_AMPERE,
-                accuracy_decimals=3,
+                accuracy_decimals=4,
                 device_class=DEVICE_CLASS_CURRENT,
                 state_class=STATE_CLASS_MEASUREMENT,
             ),
@@ -55,19 +61,41 @@ CONFIG_SCHEMA = (
             ),
             cv.Optional(CONF_STATE_OF_CHARGE): sensor.sensor_schema(
                 unit_of_measurement=UNIT_PERCENT,
+                accuracy_decimals=2,
+                device_class=DEVICE_CLASS_BATTERY,
+                state_class=STATE_CLASS_MEASUREMENT,
+            ),
+            cv.Optional(CONF_REMAINING_CAPACITY): sensor.sensor_schema(
+                unit_of_measurement=UNIT_MILLIAMPERE_HOUR,
                 accuracy_decimals=1,
                 device_class=DEVICE_CLASS_BATTERY,
                 state_class=STATE_CLASS_MEASUREMENT,
+                icon="mdi:battery-charging-50",
+            ),
+            cv.Optional(CONF_FULL_CAPACITY): sensor.sensor_schema(
+                unit_of_measurement=UNIT_MILLIAMPERE_HOUR,
+                accuracy_decimals=1,
+                device_class=DEVICE_CLASS_BATTERY,
+                state_class=STATE_CLASS_MEASUREMENT,
+                icon="mdi:battery",
+            ),
+            cv.Optional(CONF_CYCLE_COUNT): sensor.sensor_schema(
+                unit_of_measurement="cycles",
+                accuracy_decimals=2,
+                state_class=STATE_CLASS_TOTAL_INCREASING,
+                icon="mdi:counter",
             ),
             cv.Optional(CONF_TIME_TO_EMPTY): sensor.sensor_schema(
                 unit_of_measurement=UNIT_MINUTE,
                 accuracy_decimals=0,
                 state_class=STATE_CLASS_MEASUREMENT,
+                icon="mdi:battery-arrow-down",
             ),
             cv.Optional(CONF_TIME_TO_FULL): sensor.sensor_schema(
                 unit_of_measurement=UNIT_MINUTE,
                 accuracy_decimals=0,
                 state_class=STATE_CLASS_MEASUREMENT,
+                icon="mdi:battery-arrow-up",
             ),
         }
     )
@@ -96,6 +124,18 @@ async def to_code(config):
     if CONF_STATE_OF_CHARGE in config:
         sens = await sensor.new_sensor(config[CONF_STATE_OF_CHARGE])
         cg.add(var.set_state_of_charge_sensor(sens))
+
+    if CONF_REMAINING_CAPACITY in config:
+        sens = await sensor.new_sensor(config[CONF_REMAINING_CAPACITY])
+        cg.add(var.set_remaining_capacity_sensor(sens))
+
+    if CONF_FULL_CAPACITY in config:
+        sens = await sensor.new_sensor(config[CONF_FULL_CAPACITY])
+        cg.add(var.set_full_capacity_sensor(sens))
+
+    if CONF_CYCLE_COUNT in config:
+        sens = await sensor.new_sensor(config[CONF_CYCLE_COUNT])
+        cg.add(var.set_cycle_count_sensor(sens))
 
     if CONF_TIME_TO_EMPTY in config:
         sens = await sensor.new_sensor(config[CONF_TIME_TO_EMPTY])
