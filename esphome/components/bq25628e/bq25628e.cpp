@@ -330,6 +330,18 @@ bool BQ25628EComponent::read_adc_values_() {
     }
   }
   
+  // Read charger status register (REG0x1E) for VBUS and CHG status
+  uint16_t status_reg_word;
+  if (this->read_register_word_(BQ25628E_REG_CHG_STATUS_1, status_reg_word)) {
+    uint8_t status_byte = status_reg_word & 0xFF;
+    uint8_t vbus_stat = status_byte & 0x07;  // Bits 2:0: VBUS status
+    uint8_t chg_stat = (status_byte >> 3) & 0x03;  // Bits 4:3: Charge status
+    const char* vbus_status[] = {"No Power", "Reserved", "Reserved", "Reserved", 
+                                  "Unknown Adapter", "Reserved", "Reserved", "Reserved"};
+    const char* chg_status[] = {"Not Charging", "CC/Trickle/Precharge", "CV Taper", "Top-off"};
+    ESP_LOGD(TAG, "Status: VBUS=%s, CHG=%s", vbus_status[vbus_stat], chg_status[chg_stat]);
+  }
+
   // Read fault status register for debugging (REG0x1F)
   uint16_t fault_reg;
   if (this->read_register_word_(BQ25628E_REG_FAULT_STATUS_0, fault_reg)) {
