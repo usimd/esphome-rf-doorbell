@@ -30,8 +30,8 @@ static const uint8_t MAX17260_REG_SOFTWAKEUP = 0x60;  // Soft-wakeup
 
 // Scaling factors from datasheet Table 3
 static const float VCELL_SCALE = 0.078125e-3f;         // 78.125µV per LSB
-static const float CURRENT_SCALE = 1.5625e-6f / 0.025f; // 1.5625μV/RSENSE, RSENSE=25mΩ -> 0.0625mA per LSB
-static const float CAPACITY_SCALE = 5.0e-6f / 0.025f;  // 5μVh/RSENSE, RSENSE=25mΩ -> 0.2mAh per LSB  
+static const float CURRENT_SCALE = 1.5625e-6f / 0.025f; // 1.5625μV/RSENSE, RSENSE=25mΩ -> 62.5μA per LSB
+static const float CAPACITY_SCALE = (5.0e-6f / 0.025f) * 1000.0f;  // 5μVh/RSENSE, RSENSE=25mΩ -> 0.2mAh per LSB  
 static const float PERCENT_SCALE = 1.0f / 256.0f;      // 1/256% per LSB (full 16-bit resolution)
 static const float TIME_SCALE = 5.625f;                // 5.625s per LSB
 static const float TEMP_SCALE = 1.0f / 256.0f;         // 1/256°C per LSB
