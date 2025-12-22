@@ -25,7 +25,9 @@ CONF_CHARGE_CURRENT = "charge_current"
 CONF_SYSTEM_VOLTAGE = "system_voltage"
 CONF_INPUT_CURRENT = "input_current"
 CONF_TS_TEMPERATURE = "ts_temperature"
+CONF_TS_VOLTAGE = "ts_voltage"
 CONF_DIE_TEMPERATURE = "die_temperature"
+CONF_TS_MONITORING_ENABLED = "ts_monitoring_enabled"
 CONF_CHARGE_CURRENT_LIMIT = "charge_current_limit"
 CONF_CHARGE_VOLTAGE_LIMIT = "charge_voltage_limit"
 CONF_INPUT_CURRENT_LIMIT = "input_current_limit"
@@ -85,6 +87,12 @@ CONFIG_SCHEMA = (
                 device_class=DEVICE_CLASS_VOLTAGE,
                 state_class=STATE_CLASS_MEASUREMENT,
             ),
+            cv.Optional(CONF_TS_VOLTAGE): sensor.sensor_schema(
+                unit_of_measurement=UNIT_VOLT,
+                accuracy_decimals=3,
+                device_class=DEVICE_CLASS_VOLTAGE,
+                state_class=STATE_CLASS_MEASUREMENT,
+            ),
             cv.Optional(CONF_DIE_TEMPERATURE): sensor.sensor_schema(
                 unit_of_measurement=UNIT_CELSIUS,
                 accuracy_decimals=1,
@@ -124,6 +132,7 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_THERMAL_REGULATION_THRESHOLD, default=120): cv.one_of(
                 60, 120, int=True
             ),
+            cv.Optional(CONF_TS_MONITORING_ENABLED, default=True): cv.boolean,
         }
     )
     .extend(cv.polling_component_schema("60s"))
@@ -161,6 +170,10 @@ async def to_code(config):
         sens = await sensor.new_sensor(config[CONF_TS_TEMPERATURE])
         cg.add(var.set_ts_temperature_sensor(sens))
 
+    if CONF_TS_VOLTAGE in config:
+        sens = await sensor.new_sensor(config[CONF_TS_VOLTAGE])
+        cg.add(var.set_ts_voltage_sensor(sens))
+
     if CONF_DIE_TEMPERATURE in config:
         sens = await sensor.new_sensor(config[CONF_DIE_TEMPERATURE])
         cg.add(var.set_die_temperature_sensor(sens))
@@ -178,3 +191,5 @@ async def to_code(config):
     cg.add(var.set_recharge_threshold(config[CONF_RECHARGE_THRESHOLD]))
     cg.add(var.set_watchdog_timeout(config[CONF_WATCHDOG_TIMEOUT]))
     cg.add(var.set_thermal_regulation_threshold(config[CONF_THERMAL_REGULATION_THRESHOLD]))
+    cg.add(var.set_ts_monitoring_enabled(config[CONF_TS_MONITORING_ENABLED]))
+    cg.add(var.set_ts_monitoring_enabled(config[CONF_TS_MONITORING_ENABLED]))

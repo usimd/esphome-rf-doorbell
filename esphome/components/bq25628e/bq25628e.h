@@ -97,6 +97,7 @@ static const uint8_t CHARGER_CTRL_0_WD_RST = 0x02;  // Bit 1: Watchdog reset
 // REG0x17 Charger Control 1 bit masks
 static const uint8_t CHARGER_CTRL_1_REG_RST = 0x80;  // Bit 7: Register reset
 static const uint8_t CHARGER_CTRL_1_TREG = 0x40;  // Bit 6: Thermal regulation (0=60C, 1=120C)
+static const uint8_t CHARGER_CTRL_1_TS_IGNORE = 0x01;  // Bit 0: Ignore TS function
 
 // REG0x1E Charger Status 1 bit masks
 static const uint8_t CHG_STATUS_1_CHG_STAT_MASK = 0x18;  // Bits 4:3
@@ -123,7 +124,9 @@ class BQ25628EComponent : public PollingComponent, public i2c::I2CDevice {
   void set_system_voltage_sensor(sensor::Sensor *sensor) { system_voltage_sensor_ = sensor; }
   void set_input_current_sensor(sensor::Sensor *sensor) { input_current_sensor_ = sensor; }
   void set_ts_temperature_sensor(sensor::Sensor *sensor) { ts_temperature_sensor_ = sensor; }
+  void set_ts_voltage_sensor(sensor::Sensor *sensor) { ts_voltage_sensor_ = sensor; }
   void set_die_temperature_sensor(sensor::Sensor *sensor) { die_temperature_sensor_ = sensor; }
+  void set_ts_monitoring_enabled(bool enabled) { ts_monitoring_enabled_ = enabled; }
 
   void set_charge_current_limit(float limit) { charge_current_limit_ = limit; }
   void set_charge_voltage_limit(float limit) { charge_voltage_limit_ = limit; }
@@ -166,6 +169,7 @@ class BQ25628EComponent : public PollingComponent, public i2c::I2CDevice {
   sensor::Sensor *system_voltage_sensor_{nullptr};
   sensor::Sensor *input_current_sensor_{nullptr};
   sensor::Sensor *ts_temperature_sensor_{nullptr};
+  sensor::Sensor *ts_voltage_sensor_{nullptr};
   sensor::Sensor *die_temperature_sensor_{nullptr};
 
   float charge_current_limit_;
@@ -180,6 +184,7 @@ class BQ25628EComponent : public PollingComponent, public i2c::I2CDevice {
   bool vindpm_battery_tracking_;
   uint8_t watchdog_timeout_;
   uint8_t thermal_regulation_threshold_;
+  bool ts_monitoring_enabled_{true};
 
   bool read_adc_values_();
   bool configure_charger_();

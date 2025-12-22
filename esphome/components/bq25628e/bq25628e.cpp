@@ -190,10 +190,15 @@ bool BQ25628EComponent::configure_charger_() {
   }
   ESP_LOGD(TAG, "Charger control 0 configured: watchdog=%d", this->watchdog_timeout_);
   
-  // Configure charger control 1 (REG0x17) - thermal regulation
+  // Configure charger control 1 (REG0x17) - thermal regulation and TS monitoring
   uint8_t charger_ctrl_1 = 0;
   if (this->thermal_regulation_threshold_ > 90) {
     charger_ctrl_1 |= CHARGER_CTRL_1_TREG;  // 120C
+  }
+  // Disable TS monitoring if configured (to bypass thermal faults)
+  if (!this->ts_monitoring_enabled_) {
+    charger_ctrl_1 |= CHARGER_CTRL_1_TS_IGNORE;  // Ignore TS function
+    ESP_LOGW(TAG, "TS monitoring DISABLED - thermal protection bypassed!");
   }
   // Default switching frequency and strength (bits 5:2)
   charger_ctrl_1 |= 0x0C;  // SET_CONV_STRN = 11b (strong)
@@ -201,7 +206,8 @@ bool BQ25628EComponent::configure_charger_() {
     ESP_LOGE(TAG, "Failed to configure charger control 1");
     return false;
   }
-  ESP_LOGD(TAG, "Thermal regulation threshold: %dC", this->thermal_regulation_threshold_);
+  ESP_LOGD(TAG, "Thermal regulation threshold: %dC, TS monitoring: %s", 
+           this->thermal_regulation_threshold_, this->ts_monitoring_enabled_ ? "enabled" : "DISABLED");
   
   // Enable ADC: bit 7 = ADC_EN, bit 6 = ADC continuous mode
   if (!this->write_register_word_(BQ25628E_REG_ADC_CTRL, 0xC0)) {
@@ -293,14 +299,19 @@ bool BQ25628EComponent::read_adc_values_() {
     }
   }
   
-  // Read and publish TS temperature - datasheet: 0.9765625mV per LSB, bits 11:0
-  if (this->ts_temperature_sensor_ != nullptr) {
+  // Read and publish TS temperature/voltage - datasheet: 0.9765625mV per LSB, bits 11:0
+  if (this->ts_temperature_sensor_ != nullptr || this->ts_voltage_sensor_ != nullptr) {
     uint16_t raw_ts;
     if (this->read_register_word_(BQ25628E_REG_TS_ADC, raw_ts)) {
       uint16_t ts_adc = raw_ts & 0x0FFF;  // Bits 11:0, 12-bit value
       float ts_voltage = ts_adc * TS_ADC_STEP;
       ESP_LOGD(TAG, "TS raw: 0x%04X, ADC: %d, voltage: %.3f V", raw_ts, ts_adc, ts_voltage);
-      this->ts_temperature_sensor_->publish_state(ts_voltage);
+      if (this->ts_temperature_sensor_ != nullptr) {
+        this->ts_temperature_sensor_->publish_state(ts_voltage);
+      }
+      if (this->ts_voltage_sensor_ != nullptr) {
+        this->ts_voltage_sensor_->publish_state(ts_voltage);
+      }
     } else {
       ESP_LOGW(TAG, "Failed to read TS");
     }
