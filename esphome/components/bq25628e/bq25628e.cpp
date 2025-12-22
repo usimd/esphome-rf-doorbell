@@ -330,18 +330,22 @@ bool BQ25628EComponent::read_adc_values_() {
     }
   }
   
-  // Read fault status register for debugging
+  // Read fault status register for debugging (REG0x1F)
   uint16_t fault_reg;
   if (this->read_register_word_(BQ25628E_REG_FAULT_STATUS_0, fault_reg)) {
     uint8_t fault_byte = fault_reg & 0xFF;  // LSB contains fault bits
+    uint8_t ts_stat = fault_byte & 0x07;  // Bits 2:0: TS temperature zone
     if (fault_byte != 0) {
-      ESP_LOGW(TAG, "Fault Status: 0x%02X - VBUS_OVP:%d VAC_OVP:%d TSHUT:%d BATOVP:%d SYSOVP:%d",
+      ESP_LOGW(TAG, "Fault Status: 0x%02X - VBUS_FAULT:%d BAT_FAULT:%d SYS_FAULT:%d TSHUT:%d TS_ZONE:%d",
                fault_byte,
-               (fault_byte & 0x80) ? 1 : 0,  // Bit 7: VBUS OVP
-               (fault_byte & 0x40) ? 1 : 0,  // Bit 6: VAC OVP
-               (fault_byte & 0x20) ? 1 : 0,  // Bit 5: Thermal shutdown
-               (fault_byte & 0x08) ? 1 : 0,  // Bit 3: Battery OVP
-               (fault_byte & 0x01) ? 1 : 0); // Bit 0: System OVP
+               (fault_byte & 0x80) ? 1 : 0,  // Bit 7: VBUS fault (OVP or sleep)
+               (fault_byte & 0x40) ? 1 : 0,  // Bit 6: Battery fault (OCP or OVP)
+               (fault_byte & 0x20) ? 1 : 0,  // Bit 5: VSYS fault (short or OVP)
+               (fault_byte & 0x08) ? 1 : 0,  // Bit 3: Thermal shutdown
+               ts_stat);  // Bits 2:0: Temperature zone (0=normal, 1=cold, 2=hot, etc)
+      // Decode TS_STAT zone
+      const char* ts_zone[] = {"NORMAL", "COLD/NO_BIAS", "HOT", "COOL", "WARM", "PRECOOL", "PREWARM", "BIAS_FAULT"};
+      ESP_LOGW(TAG, "TS Zone: %s", ts_zone[ts_stat]);
     }
   }
   
