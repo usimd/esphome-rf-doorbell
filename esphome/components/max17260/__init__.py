@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import i2c, sensor
+from esphome.components import i2c, sensor, text_sensor
 from esphome.const import (
     CONF_ID,
     CONF_VOLTAGE,
@@ -17,6 +17,7 @@ from esphome.const import (
     UNIT_CELSIUS,
     UNIT_PERCENT,
     UNIT_MINUTE,
+    ENTITY_CATEGORY_DIAGNOSTIC,
 )
 
 DEPENDENCIES = ["i2c"]
@@ -29,6 +30,8 @@ CONF_FULL_CAPACITY = "full_capacity"
 CONF_CYCLE_COUNT = "cycle_count"
 CONF_TIME_TO_EMPTY = "time_to_empty"
 CONF_TIME_TO_FULL = "time_to_full"
+CONF_DEVICE_NAME = "device_name"
+CONF_SERIAL_NUMBER = "serial_number"
 
 UNIT_MILLIAMPERE_HOUR = "mAh"
 
@@ -97,6 +100,14 @@ CONFIG_SCHEMA = (
                 state_class=STATE_CLASS_MEASUREMENT,
                 icon="mdi:battery-arrow-up",
             ),
+            cv.Optional(CONF_DEVICE_NAME): text_sensor.text_sensor_schema(
+                icon="mdi:chip",
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            ),
+            cv.Optional(CONF_SERIAL_NUMBER): text_sensor.text_sensor_schema(
+                icon="mdi:identifier",
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            ),
         }
     )
     .extend(cv.polling_component_schema("30s"))
@@ -144,3 +155,11 @@ async def to_code(config):
     if CONF_TIME_TO_FULL in config:
         sens = await sensor.new_sensor(config[CONF_TIME_TO_FULL])
         cg.add(var.set_time_to_full_sensor(sens))
+
+    if CONF_DEVICE_NAME in config:
+        sens = await text_sensor.new_text_sensor(config[CONF_DEVICE_NAME])
+        cg.add(var.set_device_name_sensor(sens))
+
+    if CONF_SERIAL_NUMBER in config:
+        sens = await text_sensor.new_text_sensor(config[CONF_SERIAL_NUMBER])
+        cg.add(var.set_serial_number_sensor(sens))

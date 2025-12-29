@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import i2c, sensor
+from esphome.components import i2c, sensor, text_sensor
 from esphome.const import (
     CONF_ID,
     CONF_VOLTAGE,
@@ -13,6 +13,7 @@ from esphome.const import (
     UNIT_VOLT,
     UNIT_AMPERE,
     UNIT_CELSIUS,
+    ENTITY_CATEGORY_DIAGNOSTIC,
 )
 
 DEPENDENCIES = ["i2c"]
@@ -40,6 +41,8 @@ CONF_VINDPM_BATTERY_TRACKING = "vindpm_battery_tracking"
 CONF_RECHARGE_THRESHOLD = "recharge_threshold"
 CONF_WATCHDOG_TIMEOUT = "watchdog_timeout"
 CONF_THERMAL_REGULATION_THRESHOLD = "thermal_regulation_threshold"
+CONF_PART_NUMBER = "part_number"
+CONF_DEVICE_REVISION = "device_revision"
 
 bq25628e_ns = cg.esphome_ns.namespace("bq25628e")
 BQ25628EComponent = bq25628e_ns.class_(
@@ -133,6 +136,14 @@ CONFIG_SCHEMA = (
                 60, 120, int=True
             ),
             cv.Optional(CONF_TS_MONITORING_ENABLED, default=True): cv.boolean,
+            cv.Optional(CONF_PART_NUMBER): text_sensor.text_sensor_schema(
+                icon="mdi:chip",
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            ),
+            cv.Optional(CONF_DEVICE_REVISION): text_sensor.text_sensor_schema(
+                icon="mdi:identifier",
+                entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+            ),
         }
     )
     .extend(cv.polling_component_schema("60s"))
@@ -177,6 +188,14 @@ async def to_code(config):
     if CONF_DIE_TEMPERATURE in config:
         sens = await sensor.new_sensor(config[CONF_DIE_TEMPERATURE])
         cg.add(var.set_die_temperature_sensor(sens))
+
+    if CONF_PART_NUMBER in config:
+        sens = await text_sensor.new_text_sensor(config[CONF_PART_NUMBER])
+        cg.add(var.set_part_number_sensor(sens))
+
+    if CONF_DEVICE_REVISION in config:
+        sens = await text_sensor.new_text_sensor(config[CONF_DEVICE_REVISION])
+        cg.add(var.set_device_revision_sensor(sens))
 
     # Set configuration parameters
     cg.add(var.set_charge_current_limit(config[CONF_CHARGE_CURRENT_LIMIT]))
