@@ -91,7 +91,7 @@ jobs:
           sch_pdf: true
           sch_bom: true
           sch_erc: true
-          pcb_drc: true
+          pcb_drc: false # ignored DRC violations are still reported
           kicad_pcb: base/esphome-rf-doorbell.kicad_pcb
           pcb_gerbers: true  
 
