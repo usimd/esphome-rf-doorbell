@@ -38,14 +38,6 @@ jobs:
         run: |
           esphome compile doorbell.yaml
 
-      - name: Upload ESPHome firmware artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: esphome-firmware
-          path: |
-            esphome/.esphome/build/esphome-rf-doorbell/.pioenvs/esphome-rf-doorbell/firmware.factory.bin
-            esphome/.esphome/build/esphome-rf-doorbell/.pioenvs/esphome-rf-doorbell/firmware.ota.bin
-
       - name: Upload ESPHome external components
         uses: actions/upload-artifact@v4
         with:
@@ -100,9 +92,9 @@ jobs:
         with:
           name: base-pcb
           path: |
-            base/esphome-rf-doorbell.pdf
-            base/esphome-rf-doorbell-bom.csv
-            base/esphome-rf-doorbell-gerbers/
+            base/sch.pdf
+            base/bom.csv
+            base/gbr.zip
 
       - name: Upload base ERC/DRC reports on failure
         if: failure()
@@ -132,9 +124,9 @@ jobs:
         with:
           name: remote-pcb
           path: |
-            remote/remote.pdf
-            remote/remote-bom.csv
-            remote/remote-gerbers/
+            remote/sch.pdf
+            remote/bom.csv
+            remote/gbr.zip
 
       - name: Upload remote ERC/DRC reports on failure
         if: failure()
