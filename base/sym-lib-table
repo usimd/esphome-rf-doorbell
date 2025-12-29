@@ -1,5 +1,5 @@
 (sym_lib_table
   (version 7)
-  (lib (name "BQ25628E")(type "KiCad")(uri "/home/q425942/private/projects/esphome-rf-doorbell/lib/BQ25628E.kicad_sym")(options "")(descr ""))
-  (lib (name "TPS629206")(type "KiCad")(uri "/home/q425942/private/projects/esphome-rf-doorbell/lib/TPS629206.kicad_sym")(options "")(descr ""))
+  (lib (name "BQ25628E")(type "KiCad")(uri "${KIPRJMOD}/../lib/BQ25628E.kicad_sym")(options "")(descr ""))
+  (lib (name "TPS629206")(type "KiCad")(uri "${KIPRJMOD}/../lib/TPS629206.kicad_sym")(options "")(descr ""))
 )

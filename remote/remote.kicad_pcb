@@ -1455,7 +1455,7 @@
 				(xyz 0 0 0)
 			)
 		)
-		(model "/home/q425942/private/projects/esphome-rf-doorbell/lib/RFM69HW-868S2--3DModel-STEP-1.STEP"
+		(model "${KIPRJMOD}/../lib/RFM69HW-868S2--3DModel-STEP-1.STEP"
 			(offset
 				(xyz 0 0 0)
 			)
