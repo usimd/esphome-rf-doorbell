@@ -78,8 +78,7 @@ jobs:
         with:
           name: remote-firmware
           path: |
-            remote/firmware/_build/remote/default/*.hex
-            remote/firmware/_build/remote/default/*.bin
+            remote/firmware/out/remote/default.*
 
   kicad-base-test:
     runs-on: ubuntu-latest
@@ -105,6 +104,14 @@ jobs:
             base/esphome-rf-doorbell-bom.csv
             base/esphome-rf-doorbell-gerbers/
 
+      - name: Upload base ERC/DRC reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-pcb-reports
+          path: |
+            base/*.rpt
+
   kicad-remote-test:
     runs-on: ubuntu-latest
     steps:
@@ -128,6 +135,14 @@ jobs:
             remote/remote.pdf
             remote/remote-bom.csv
             remote/remote-gerbers/
+
+      - name: Upload remote ERC/DRC reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-pcb-reports
+          path: |
+            remote/*.rpt
 
   # Final job to consolidate all artifacts - only runs if all jobs succeed
   upload-release-artifacts:
