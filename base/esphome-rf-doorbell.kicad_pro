@@ -382,6 +382,10 @@
         ""
       ],
       [
+        "multiple_net_names|342900|266700|9cd1590c-7f0d-460d-b96d-b1566d2a4e4e|5de81079-6fc1-4b2f-b9a7-51fbf4774c07|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02",
+        ""
+      ],
+      [
         "pin_to_pin|1003300|381000|175bbafb-2eb2-4080-b1fa-eb27623df415|1de780eb-3a22-42a4-b9f8-62b8413e7d36|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02",
         "BAT is power input and output, hence modeled bidirectional"
       ],
