@@ -64,13 +64,23 @@ globals:
     restore_value: yes
     initial_value: 'false'
 
+# Custom components from GitHub repository
+external_components:
+  - source:
+      type: local #git
+      #url: https://github.com/usimd/esphome-rf-doorbell
+      #ref: main
+      path: components
+    components: [bq25628e, max17260, rfm69]
+    refresh: 1s
+
 # Advanced deep sleep configuration with multiple wake sources
 # ESP32 runs from battery, RFM69 always powered from VBUS
 # Wake sources:
 #   1. GPIO6 (DIO0) - RF packet received from RFM69
 #   2. GPIO13 (BELL_SIGNAL) - Wired doorbell button pressed
 #   3. GPIO17 (BQ_INT) - Battery charger interrupt (fault, charge complete, etc.)
-#   4. GPIO37 (BAT_ALERT) - Battery low alert from fuel gauge
+#   4. GPIO21 (BAT_ALERT) - Battery low alert from fuel gauge
 # Wake behavior:
 #   - Periodic wakeup: 3s run time (sensor update + sync)
 #   - External interrupt: 30s run time (allow user interaction)
@@ -86,7 +96,7 @@ deep_sleep:
         mode: INPUT_PULLUP
         inverted: true
         allow_other_uses: true
-      - number: GPIO37
+      - number: GPIO21
         mode: INPUT_PULLUP
         inverted: true
         allow_other_uses: true
@@ -125,7 +135,7 @@ binary_sensor:
     name: "Battery Alert"
     id: battery_alert_pin
     pin:
-      number: GPIO37
+      number: GPIO21
       mode: INPUT_PULLUP
       inverted: true
       allow_other_uses: true
@@ -212,7 +222,7 @@ switch:
     name: "RF Power"
     id: rf_power
     pin:
-      number: GPIO21
+      number: GPIO33
       mode: OUTPUT
       inverted: false
     restore_mode: RESTORE_DEFAULT_ON
@@ -263,17 +273,6 @@ switch:
       then:
         - delay: 3s
         - switch.turn_off: door_opener
-  
-
-
-# Custom components from GitHub repository
-external_components:
-  - source:
-      type: git
-      url: https://github.com/usimd/esphome-rf-doorbell
-      ref: main
-    components: [bq25628e, max17260, rfm69]
-    refresh: 1s
 
 # BQ25628E Battery Charger Component
 bq25628e:

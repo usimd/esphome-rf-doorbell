@@ -48,7 +48,7 @@
         "silk_text_thickness": 0.1,
         "silk_text_upright": false,
         "zones": {
-          "min_clearance": 0.0
+          "min_clearance": 0.2
         }
       },
       "diff_pair_dimensions": [
@@ -60,6 +60,38 @@
       ],
       "drc_exclusions": [
         [
+          "annular_width|140870000|119125000|e91c9d42-12db-4f88-9221-e8388b3d8ff4|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "clearance|140440000|118800000|67d47d83-b0a0-413a-974a-6c4f166f82a2|e91c9d42-12db-4f88-9221-e8388b3d8ff4",
+          ""
+        ],
+        [
+          "clearance|140477825|119312114|874eadb4-0e91-44b6-a617-b8e8f2c92ad4|9a6c388d-4001-4bba-8be8-21d5fd7ea778",
+          ""
+        ],
+        [
+          "clearance|140580355|118835356|62a143a4-e2c8-46d3-b438-4bba0ec62496|e91c9d42-12db-4f88-9221-e8388b3d8ff4",
+          ""
+        ],
+        [
+          "clearance|140670000|118745711|62a143a4-e2c8-46d3-b438-4bba0ec62496|9a6c388d-4001-4bba-8be8-21d5fd7ea778",
+          ""
+        ],
+        [
+          "clearance|141070000|119504289|beb56790-fab4-4e1f-971e-c457949fda96|9a6c388d-4001-4bba-8be8-21d5fd7ea778",
+          ""
+        ],
+        [
+          "clearance|141449052|119453571|63f83ace-37f6-4f53-86e5-7128db54e7b7|e91c9d42-12db-4f88-9221-e8388b3d8ff4",
+          ""
+        ],
+        [
+          "clearance|141452623|119450000|28d6ab9e-f4b7-409d-a8c5-8ea8d8a99ff6|e91c9d42-12db-4f88-9221-e8388b3d8ff4",
+          ""
+        ],
+        [
           "items_not_allowed|113900000|113400000|9c357413-03ee-472c-8fb8-e5b0a44fb295|00000000-0000-0000-0000-000000000000",
           "Only for flashing, not permanently"
         ],
@@ -68,11 +100,43 @@
           "Only for flashing, not permanently"
         ],
         [
+          "lib_footprint_mismatch|114500000|88400000|da6a3267-8f9a-46b8-aa88-3241837e2bfb|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "lib_footprint_mismatch|127900000|77687500|6e233a57-653e-44d5-b68a-ea9ac6df24ff|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
           "silk_edge_clearance|117400000|121000000|b2e73cb8-b4b7-47cd-b515-3f9330338608|f1efea6a-5d97-49c9-ab40-b8e4cc429a76",
           ""
         ],
         [
           "silk_edge_clearance|133000000|121000000|b2e73cb8-b4b7-47cd-b515-3f9330338608|08fcd229-19da-4432-a1cc-55a3aedda9ab",
+          ""
+        ],
+        [
+          "silk_overlap|111100000|71962500|74e576eb-0865-40a0-9e33-d3e9b7b06ca7|c93b5195-e106-4bfd-b5dd-e909809e18bc",
+          ""
+        ],
+        [
+          "silk_overlap|122600000|71962500|3be1b2ab-5f3b-42ad-bc55-a9573f3a7e15|d73daf3d-5d3b-4416-a466-f7ab9a654d48",
+          ""
+        ],
+        [
+          "silk_overlap|128650000|67300000|553ff66a-a396-4763-882e-df7b574cb9b8|c658b31e-d89a-4e52-bb00-0b539211128c",
+          ""
+        ],
+        [
+          "silk_overlap|133500000|68700000|553ff66a-a396-4763-882e-df7b574cb9b8|adf4f167-42c9-4df9-8211-3f3c64f42c38",
+          ""
+        ],
+        [
+          "silk_overlap|133500000|70250000|152e4e67-2cb4-40d0-8bb6-8bd0e4893f50|553ff66a-a396-4763-882e-df7b574cb9b8",
+          ""
+        ],
+        [
+          "silk_overlap|160100000|69287740|616c588c-d340-46d0-9dc4-cbdda59cab94|79fd67af-4c28-4c13-8dd3-45a4284a9896",
           ""
         ]
       ],
@@ -302,12 +366,24 @@
         ""
       ],
       [
+        "lib_symbol_mismatch|749300|825500|69829103-9e85-4e27-b604-683105c26950|00000000-0000-0000-0000-000000000000|||",
+        ""
+      ],
+      [
+        "lib_symbol_mismatch|952500|266700|16f69b3e-ce80-435c-8742-28d624a7a180|00000000-0000-0000-0000-000000000000|||",
+        ""
+      ],
+      [
         "multiple_net_names|152400|1689100|12d3b0a6-0724-446c-ab45-f1733dd0b938|4b2272fc-b9fe-45a9-bb0e-1e9cdcc81e18|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02",
         ""
       ],
       [
         "multiple_net_names|190500|1574800|12d3b0a6-0724-446c-ab45-f1733dd0b938|4b2272fc-b9fe-45a9-bb0e-1e9cdcc81e18|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02",
         ""
+      ],
+      [
+        "pin_to_pin|1003300|381000|175bbafb-2eb2-4080-b1fa-eb27623df415|1de780eb-3a22-42a4-b9f8-62b8413e7d36|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02",
+        "BAT is power input and output, hence modeled bidirectional"
       ],
       [
         "pin_to_pin|1422400|939800|c684732c-05fb-4475-8ab4-00333ddafaef|50163525-9499-477f-b0f1-95803c997f9c|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02|/b07d5988-2788-4b3b-a250-602b43e32b02",

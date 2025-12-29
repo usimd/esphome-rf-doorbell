@@ -9101,16 +9101,12 @@
 		(uuid "752426ca-da1b-4989-91eb-aa22d36165c7")
 	)
 	(no_connect
-		(at 245.11 118.11)
-		(uuid "957522f8-62ed-4818-ac1b-be090df792e8")
-	)
-	(no_connect
 		(at 245.11 130.81)
 		(uuid "967fffc8-e51a-41f3-b155-f97b94a9d7cd")
 	)
 	(no_connect
 		(at 245.11 115.57)
-		(uuid "a8a9b768-304c-4045-913d-bbaafb8472ff")
+		(uuid "a293df11-4433-4aaa-8253-c248e388d861")
 	)
 	(no_connect
 		(at 245.11 135.89)
@@ -9131,6 +9127,10 @@
 	(no_connect
 		(at 245.11 146.05)
 		(uuid "db31915a-a66c-4b18-a579-3415523fdefa")
+	)
+	(no_connect
+		(at 245.11 128.27)
+		(uuid "e3401647-c506-4c53-804f-4912f6b27f35")
 	)
 	(no_connect
 		(at 24.13 72.39)
@@ -9299,6 +9299,16 @@
 			(type default)
 		)
 		(uuid "12b843d5-f105-46ce-9bc8-d93af0a68d73")
+	)
+	(wire
+		(pts
+			(xy 257.81 118.11) (xy 245.11 118.11)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "130f1f27-d9e0-4516-93bd-1b2ad68732a0")
 	)
 	(wire
 		(pts
@@ -9912,16 +9922,6 @@
 	)
 	(wire
 		(pts
-			(xy 257.81 128.27) (xy 245.11 128.27)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "5a5182d7-91f0-4b63-a0b3-56e914abe799")
-	)
-	(wire
-		(pts
 			(xy 135.89 134.62) (xy 135.89 142.24)
 		)
 		(stroke
@@ -10239,16 +10239,6 @@
 			(type dash)
 		)
 		(uuid "7800f4ee-c3f2-420b-b776-60ed6c19ad70")
-	)
-	(wire
-		(pts
-			(xy 257.81 113.03) (xy 245.11 113.03)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "788b2149-cb9e-489e-ad19-bb5a41b9a085")
 	)
 	(wire
 		(pts
@@ -11412,6 +11402,16 @@
 	)
 	(wire
 		(pts
+			(xy 257.81 113.03) (xy 245.11 113.03)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f422e53b-b94f-417a-8c70-cc33e1b9089d")
+	)
+	(wire
+		(pts
 			(xy 30.48 29.21) (xy 27.94 29.21)
 		)
 		(stroke
@@ -11860,6 +11860,16 @@
 		)
 		(uuid "98eabc57-d0ce-49b1-a914-e60f705f3378")
 	)
+	(label "RF_PWR_EN"
+		(at 257.81 118.11 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "996cda7a-4b1b-4c48-9286-dddf44c586ac")
+	)
 	(label "RF.IO2"
 		(at 259.08 43.18 180)
 		(effects
@@ -12020,16 +12030,6 @@
 		)
 		(uuid "c9567a08-1d65-4f91-827e-a8646e2b8ce2")
 	)
-	(label "RF_PWR_EN"
-		(at 257.81 113.03 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "cc16d95a-4918-461b-9362-edbd537124a1")
-	)
 	(label "RF.Reset"
 		(at 205.74 123.19 0)
 		(effects
@@ -12140,6 +12140,16 @@
 		)
 		(uuid "f3ed9e65-4568-410e-992b-a0baff56524e")
 	)
+	(label "BAT_ALERT"
+		(at 257.81 113.03 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "fd220299-1de5-41fa-9a08-ed4a7bdbafad")
+	)
 	(label "SCL1"
 		(at 207.01 143.51 0)
 		(effects
@@ -12149,16 +12159,6 @@
 			(justify left bottom)
 		)
 		(uuid "fe02c067-bf4c-4392-9d72-a95f801384da")
-	)
-	(label "BAT_ALERT"
-		(at 257.81 128.27 180)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right bottom)
-		)
-		(uuid "fea2db8f-49d7-4cad-b555-eb6b0a34c561")
 	)
 	(symbol
 		(lib_id "Device:C_Small")
