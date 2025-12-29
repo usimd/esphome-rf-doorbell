@@ -38,8 +38,8 @@
         "other_text_upright": false,
         "pads": {
           "drill": 0.0,
-          "height": 0.8,
-          "width": 0.8
+          "height": 0.58,
+          "width": 0.58
         },
         "silk_line_width": 0.1,
         "silk_text_italic": false,
@@ -61,6 +61,18 @@
       "drc_exclusions": [
         [
           "annular_width|140870000|119125000|e91c9d42-12db-4f88-9221-e8388b3d8ff4|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "assertion_failure|110350000|68200000|6827498f-3c04-49c4-a8f2-668ce1d22823|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "assertion_failure|112100000|119600000|0e3de5e2-a988-4164-ab47-2bc59a395868|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "assertion_failure|170850000|68100000|1a577cb7-c1a0-4519-ba86-03321df5c55c|00000000-0000-0000-0000-000000000000",
           ""
         ],
         [
@@ -138,6 +150,10 @@
         [
           "silk_overlap|160100000|69287740|616c588c-d340-46d0-9dc4-cbdda59cab94|79fd67af-4c28-4c13-8dd3-45a4284a9896",
           ""
+        ],
+        [
+          "via_diameter|140870000|119125000|e91c9d42-12db-4f88-9221-e8388b3d8ff4|00000000-0000-0000-0000-000000000000",
+          "Need smaller via size for x2son package - worked on AISLER 2-layer prototype"
         ]
       ],
       "meta": {
