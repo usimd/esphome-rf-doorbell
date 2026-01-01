@@ -10,9 +10,7 @@ static const char *const TAG = "bq25628e";
 void BQ25628EComponent::setup() {
   ESP_LOGCONFIG(TAG, "Setting up BQ25628E...");
   
-  // Use optimized boot configuration for minimal I2C operations
-  // Comment out and use configure_charger_() instead if you need custom configuration from YAML
-  if (!this->configure_charger_optimized_()) {
+  if (!this->configure_charger_()) {
     ESP_LOGE(TAG, "Failed to configure BQ25628E");
     this->mark_failed();
     return;
@@ -86,310 +84,176 @@ void BQ25628EComponent::update() {
   }
 }
 
-bool BQ25628EComponent::configure_charger_() {
-  ESP_LOGD(TAG, "Starting configure_charger_()");
-  
-  // Set charge current limit using validated setter
-  if (!this->set_charge_current_reg_(this->charge_current_limit_)) {
-    return false;
-  }
-  
-  // Set charge voltage limit using validated setter
-  if (!this->set_charge_voltage_reg_(this->charge_voltage_limit_)) {
-    return false;
-  }
-  
-  // Set input current limit using validated setter
-  if (!this->set_input_current_limit_reg_(this->input_current_limit_)) {
-    return false;
-  }
-  
-  // Set input voltage limit using validated setter
-  uint8_t vindpm_val = (uint8_t)((this->input_voltage_limit_ - VINDPM_MIN) / VINDPM_STEP);
-  uint16_t vindpm_word = vindpm_val;  // MSB = 0x00, LSB = vindpm_val
-  if (!this->write_register_word_(BQ25628E_REG_VINDPM_CTRL, vindpm_word)) {
-    ESP_LOGE(TAG, "Failed to set input voltage limit");
-    return false;
-  }
-  ESP_LOGD(TAG, "Input voltage limit set to %.2f V", this->input_voltage_limit_);
-  
-  // REMOVED: VBUSOVP_CTRL register (0x0A) does not exist in BQ25628E
-  // VBUS OVP is controlled by bit 0 of REG 0x17 (CHARGER_CTRL_1)
-  // Already configured correctly as part of charger_ctrl_1 setup
-  
-  // Set minimum system voltage using validated setter
-  if (!this->set_minimum_system_voltage_reg_(this->minimum_system_voltage_)) {
-    return false;
-  }
-  
-  // Set pre-charge current using validated setter
-  if (!this->set_precharge_current_reg_(this->precharge_current_)) {
-    return false;
-  }
-  
-  // Set termination current using validated setter
-  if (!this->set_termination_current_reg_(this->termination_current_)) {
-    return false;
-  }
-  
-  // Configure charge control register (REG0x14)
-  uint8_t chg_ctrl = 0;
-  if (this->termination_enabled_) {
-    chg_ctrl |= CHG_CTRL_EN_TERM;
-  }
-  if (this->vindpm_battery_tracking_) {
-    chg_ctrl |= CHG_CTRL_VINDPM_BAT_TRACK;
-  }
-  // VRECHG bit: 0 = 100mV, 1 = 200mV (use recharge_threshold_)
-  if (this->recharge_threshold_ > 0.15f) {
-    chg_ctrl |= CHG_CTRL_VRECHG_MASK;
-  }
-  if (!this->write_register_byte_(BQ25628E_REG_CHG_CTRL, chg_ctrl)) {
-    ESP_LOGE(TAG, "Failed to configure charge control");
-    return false;
-  }
-  ESP_LOGD(TAG, "Charge control configured: term=%d, vindpm_track=%d, vrechg=%.0fmV",
-           this->termination_enabled_, this->vindpm_battery_tracking_,
-           this->recharge_threshold_ * 1000);
-  
-  // Configure charger control 0 (REG0x16) - enable charging, set watchdog
-  uint8_t charger_ctrl_0 = CHARGER_CTRL_0_EN_CHG;  // Enable charging by default
-  charger_ctrl_0 |= (this->watchdog_timeout_ & 0x03);  // Bits 1:0 = watchdog timeout
-  if (!this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, charger_ctrl_0)) {
-    ESP_LOGE(TAG, "Failed to configure charger control 0");
-    return false;
-  }
-  ESP_LOGD(TAG, "Charger control 0 configured: watchdog=%d", this->watchdog_timeout_);
-  
-  // Configure charger control 1 (REG0x17) - thermal regulation, drive strength, VBUS OVP
-  uint8_t charger_ctrl_1 = CHARGER_CTRL_1_CONV_STRN_STRONG | CHARGER_CTRL_1_VBUS_OVP_18V;  // Strong drive + 18.5V OVP
-  if (this->thermal_regulation_threshold_ > 90) {
-    charger_ctrl_1 |= CHARGER_CTRL_1_TREG;  // 120C (bit 6)
-  }
-  // Result: 0x4D for 120C (strong drive + 18.5V OVP + 120C) or 0x0D for 60C
-  if (!this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_1, charger_ctrl_1)) {
-    ESP_LOGE(TAG, "Failed to configure charger control 1");
-    return false;
-  }
-  ESP_LOGD(TAG, "Charger control 1: thermal=%dC, drive=strong, VBUS_OVP=18.5V (wrote 0x%02X)", 
-           this->thermal_regulation_threshold_ > 90 ? 120 : 60, charger_ctrl_1);
-  
-  // Configure NTC Control 0 (REG0x1A) - TS monitoring enable/disable
-  uint8_t ntc_ctrl_0 = 0;
-  if (!this->ts_monitoring_enabled_) {
-    ntc_ctrl_0 |= NTC_CTRL_0_TS_IGNORE;  // Bit 7: Ignore TS function
-    ESP_LOGW(TAG, "TS monitoring DISABLED - thermal protection bypassed!");
-  }
-  if (!this->write_register_byte_(BQ25628E_REG_NTC_CTRL_0, ntc_ctrl_0)) {
-    ESP_LOGE(TAG, "Failed to configure NTC control 0");
-    return false;
-  }
-  ESP_LOGD(TAG, "NTC control 0: TS monitoring %s (wrote 0x%02X)", 
-           this->ts_monitoring_enabled_ ? "ENABLED" : "DISABLED", ntc_ctrl_0);
-  
-  // Enable ADC: bit 7 = ADC_EN, bit 6 = ADC continuous mode (8-bit register)
-  if (!this->write_register_byte_(BQ25628E_REG_ADC_CTRL, 0xC0)) {
-    ESP_LOGW(TAG, "Failed to enable ADC");
-    return false;
-  }
-  
-  // Enable all ADC channels (write 0x00 to disable register) (8-bit register)
-  if (!this->write_register_byte_(BQ25628E_REG_ADC_DIS, 0x00)) {
-    ESP_LOGW(TAG, "Failed to configure ADC channels");
-    return false;
-  }
-  
-  // Wait for ADC to be ready
-  delay(50);
-  
-  ESP_LOGD(TAG, "ADC enabled and configured");
-  
-  return true;
-}
-
 /**
- * Conservative boot configuration with read-modify-write
+ * Unified charger configuration using YAML values
  * 
- * This method uses read-modify-write for all 8-bit registers to avoid
- * making assumptions about POR (power-on-reset) defaults.
+ * Optimized for minimal I2C transactions at 1MHz:
+ * - Uses atomic 16-bit writes where possible  
+ * - Batches register writes for adjacent registers
+ * - No unnecessary read-modify-write cycles for registers we fully control
  * 
- * Configuration applied:
- * - ICHG: 160mA
- * - VREG: 4.2V
- * - IINDPM: 160mA
- * - VINDPM: 7.5V
- * - IPRECHG: 20mA
- * - ITERM: 10mA
- * - TMR2X_EN: 1 (2X timer during DPM/thermal)
- * - WATCHDOG: 100s
- * - TREG: 0 (60°C thermal regulation)
- * - ADC_EN: 1 (ADC enabled)
- * - ADC_SAMPLE: 10-bit
- * - ADC_AVG: 1 (averaging enabled)
+ * Configuration from YAML:
+ * - ICHG: charge_current_limit_
+ * - VREG: charge_voltage_limit_
+ * - IINDPM: input_current_limit_
+ * - VINDPM: input_voltage_limit_
+ * - VSYSMIN: minimum_system_voltage_
+ * - IPRECHG: precharge_current_
+ * - ITERM: termination_current_
+ * - EN_TERM: termination_enabled_
+ * - VINDPM_BAT_TRACK: vindpm_battery_tracking_
+ * - VRECHG: recharge_threshold_
+ * - WATCHDOG: watchdog_timeout_
+ * - TREG: thermal_regulation_threshold_
+ * - TS_IGNORE: !ts_monitoring_enabled_
  */
-bool BQ25628EComponent::configure_charger_optimized_() {
-  ESP_LOGCONFIG(TAG, "Configuring BQ25628E with conservative read-modify-write...");
+bool BQ25628EComponent::configure_charger_() {
+  ESP_LOGCONFIG(TAG, "Configuring BQ25628E...");
   
   // ===========================================================================
-  // 16-BIT REGISTER READ-MODIFY-WRITE
+  // 16-BIT REGISTER PAIRS - Using atomic setters for proper bit packing
   // ===========================================================================
   
-  // REG 0x02-0x03: ICHG = 160mA (LSB=40mA, code=3)
-  uint16_t ichg_read;
-  if (!this->read_register_word_(BQ25628E_REG_ICHG_CTRL, ichg_read)) {
-    ESP_LOGE(TAG, "Failed to read ICHG");
+  // REG 0x02-0x03: ICHG (Charge Current)
+  if (!this->set_charge_current_reg_(this->charge_current_limit_)) {
+    ESP_LOGE(TAG, "Failed to set ICHG");
     return false;
   }
-  if (!this->write_register_word_(BQ25628E_REG_ICHG_CTRL, 0x03)) {
-    ESP_LOGE(TAG, "Failed to write ICHG");
-    return false;
-  }
-  ESP_LOGCONFIG(TAG, "✓ ICHG = 160mA");
   
-  // REG 0x04-0x05: VREG = 4200mV (LSB=10mV, code=70)
-  uint16_t vreg_read;
-  if (!this->read_register_word_(BQ25628E_REG_VBAT_CTRL, vreg_read)) {
-    ESP_LOGE(TAG, "Failed to read VREG");
+  // REG 0x04-0x05: VREG (Charge Voltage)
+  if (!this->set_charge_voltage_reg_(this->charge_voltage_limit_)) {
+    ESP_LOGE(TAG, "Failed to set VREG");
     return false;
   }
-  if (!this->write_register_word_(BQ25628E_REG_VBAT_CTRL, 0x46)) {
-    ESP_LOGE(TAG, "Failed to write VREG");
-    return false;
-  }
-  ESP_LOGCONFIG(TAG, "✓ VREG = 4200mV");
   
-  // REG 0x06-0x07: IINDPM = 160mA (LSB=20mA, code=3)
-  uint16_t iindpm_read;
-  if (!this->read_register_word_(BQ25628E_REG_IINDPM_CTRL, iindpm_read)) {
-    ESP_LOGE(TAG, "Failed to read IINDPM");
+  // REG 0x06-0x07: IINDPM (Input Current Limit)
+  if (!this->set_input_current_limit_reg_(this->input_current_limit_)) {
+    ESP_LOGE(TAG, "Failed to set IINDPM");
     return false;
   }
-  if (!this->write_register_word_(BQ25628E_REG_IINDPM_CTRL, 0x03)) {
-    ESP_LOGE(TAG, "Failed to write IINDPM");
-    return false;
-  }
-  ESP_LOGCONFIG(TAG, "✓ IINDPM = 160mA");
   
-  // REG 0x08-0x09: VINDPM = 7500mV (LSB=40mV, code=92)
-  uint16_t vindpm_read;
-  if (!this->read_register_word_(BQ25628E_REG_VINDPM_CTRL, vindpm_read)) {
-    ESP_LOGE(TAG, "Failed to read VINDPM");
-    return false;
+  // REG 0x08-0x09: VINDPM (Input Voltage Limit)
+  // VINDPM[2:0] in REG0x08[7:5], VINDPM[8:3] in REG0x09[5:0]
+  // Range: 3800mV - 16800mV, Step: 40mV
+  {
+    uint16_t vindpm_mv = static_cast<uint16_t>(this->input_voltage_limit_ * 1000 + 0.5f);
+    vindpm_mv = std::max(static_cast<uint16_t>(3800), std::min(vindpm_mv, static_cast<uint16_t>(16800)));
+    uint16_t code = (vindpm_mv - 3800) / 40;
+    uint16_t word = ((code >> 3) << 8) | ((code & 0x07) << 5);
+    if (!this->write_register_word_(BQ25628E_REG_VINDPM_CTRL, word)) {
+      ESP_LOGE(TAG, "Failed to set VINDPM");
+      return false;
+    }
   }
-  if (!this->write_register_word_(BQ25628E_REG_VINDPM_CTRL, 0x5C)) {
-    ESP_LOGE(TAG, "Failed to write VINDPM");
-    return false;
-  }
-  ESP_LOGCONFIG(TAG, "✓ VINDPM = 7500mV");
   
-  // REG 0x10-0x11: IPRECHG = 20mA (LSB=10mA, code=1)
-  uint16_t iprechg_read;
-  if (!this->read_register_word_(BQ25628E_REG_IPRECHG_CTRL, iprechg_read)) {
-    ESP_LOGE(TAG, "Failed to read IPRECHG");
+  // REG 0x0E-0x0F: VSYSMIN (Minimum System Voltage)
+  if (!this->set_minimum_system_voltage_reg_(this->minimum_system_voltage_)) {
+    ESP_LOGE(TAG, "Failed to set VSYSMIN");
     return false;
   }
-  if (!this->write_register_word_(BQ25628E_REG_IPRECHG_CTRL, 0x01)) {
-    ESP_LOGE(TAG, "Failed to write IPRECHG");
-    return false;
-  }
-  ESP_LOGCONFIG(TAG, "✓ IPRECHG = 20mA");
   
-  // REG 0x12-0x13: ITERM = 10mA (LSB=5mA, code=1)
-  uint16_t iterm_read;
-  if (!this->read_register_word_(BQ25628E_REG_ITERM_CTRL, iterm_read)) {
-    ESP_LOGE(TAG, "Failed to read ITERM");
+  // REG 0x10: IPRECHG (Pre-charge Current)
+  if (!this->set_precharge_current_reg_(this->precharge_current_)) {
+    ESP_LOGE(TAG, "Failed to set IPRECHG");
     return false;
   }
-  if (!this->write_register_word_(BQ25628E_REG_ITERM_CTRL, 0x01)) {
-    ESP_LOGE(TAG, "Failed to write ITERM");
+  
+  // REG 0x12: ITERM (Termination Current)
+  if (!this->set_termination_current_reg_(this->termination_current_)) {
+    ESP_LOGE(TAG, "Failed to set ITERM");
     return false;
   }
-  ESP_LOGCONFIG(TAG, "✓ ITERM = 10mA");
   
   // ===========================================================================
-  // 8-BIT REGISTERS WITH READ-MODIFY-WRITE
+  // 8-BIT CONTROL REGISTERS - Direct writes (no RMW needed, we control all bits)
   // ===========================================================================
   
-  // REG 0x15: CHG_TMR_CTRL - Set TMR2X_EN (bit 3)
-  uint8_t chg_tmr_ctrl;
-  if (!this->read_register_byte_(BQ25628E_REG_CHG_TMR_CTRL, chg_tmr_ctrl)) {
-    ESP_LOGE(TAG, "Failed to read CHG_TMR_CTRL");
-    return false;
+  // REG 0x14: CHG_CTRL - Charge termination and recharge settings
+  {
+    uint8_t chg_ctrl = 0;
+    if (this->termination_enabled_) chg_ctrl |= CHG_CTRL_EN_TERM;
+    if (this->vindpm_battery_tracking_) chg_ctrl |= CHG_CTRL_VINDPM_BAT_TRACK;
+    if (this->recharge_threshold_ > 0.15f) chg_ctrl |= CHG_CTRL_VRECHG_MASK;  // 200mV vs 100mV
+    if (!this->write_register_byte_(BQ25628E_REG_CHG_CTRL, chg_ctrl)) {
+      ESP_LOGE(TAG, "Failed to write CHG_CTRL");
+      return false;
+    }
   }
-  chg_tmr_ctrl |= CHG_TMR_CTRL_TMR2X_EN;
-  if (!this->write_register_byte_(BQ25628E_REG_CHG_TMR_CTRL, chg_tmr_ctrl)) {
-    ESP_LOGE(TAG, "Failed to write CHG_TMR_CTRL");
-    return false;
-  }
-  ESP_LOGCONFIG(TAG, "✓ TMR2X_EN = 1");
   
-  // REG 0x16: CHARGER_CTRL_0 - Set WATCHDOG (bits 1:0) = 10b (100s)
-  uint8_t charger_ctrl_0;
-  if (!this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, charger_ctrl_0)) {
-    ESP_LOGE(TAG, "Failed to read CHARGER_CTRL_0");
-    return false;
+  // REG 0x15: CHG_TMR_CTRL - Timer settings
+  {
+    uint8_t tmr_ctrl = CHG_TMR_CTRL_TMR2X_EN;  // Enable 2X timer during DPM/thermal
+    if (!this->write_register_byte_(BQ25628E_REG_CHG_TMR_CTRL, tmr_ctrl)) {
+      ESP_LOGE(TAG, "Failed to write CHG_TMR_CTRL");
+      return false;
+    }
   }
-  charger_ctrl_0 = (charger_ctrl_0 & ~CHARGER_CTRL_0_WATCHDOG_MASK) | (0x02 << CHARGER_CTRL_0_WATCHDOG_SHIFT);
-  if (!this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, charger_ctrl_0)) {
-    ESP_LOGE(TAG, "Failed to write CHARGER_CTRL_0");
-    return false;
-  }
-  ESP_LOGCONFIG(TAG, "✓ WATCHDOG = 100s");
   
-  // REG 0x17: CHARGER_CTRL_1 - Clear TREG (bit 6) = 0 (60°C)
-  uint8_t charger_ctrl_1;
-  if (!this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_1, charger_ctrl_1)) {
-    ESP_LOGE(TAG, "Failed to read CHARGER_CTRL_1");
-    return false;
+  // REG 0x16: CHARGER_CTRL_0 - Enable charging, disable HIZ, set watchdog
+  {
+    uint8_t ctrl0 = CHARGER_CTRL_0_EN_CHG;  // EN_CHG=1, EN_HIZ=0
+    ctrl0 |= ((this->watchdog_timeout_ & 0x03) << CHARGER_CTRL_0_WATCHDOG_SHIFT);
+    if (!this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, ctrl0)) {
+      ESP_LOGE(TAG, "Failed to write CHARGER_CTRL_0");
+      return false;
+    }
   }
-  charger_ctrl_1 &= ~CHARGER_CTRL_1_TREG;
-  if (!this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_1, charger_ctrl_1)) {
-    ESP_LOGE(TAG, "Failed to write CHARGER_CTRL_1");
-    return false;
-  }
-  ESP_LOGCONFIG(TAG, "✓ TREG = 60°C");
   
-  // REG 0x26: ADC_CONTROL - Enable ADC with 10-bit resolution and averaging
-  uint8_t adc_ctrl;
-  if (!this->read_register_byte_(BQ25628E_REG_ADC_CTRL, adc_ctrl)) {
-    ESP_LOGE(TAG, "Failed to read ADC_CONTROL");
+  // REG 0x17: CHARGER_CTRL_1 - Thermal regulation, VBUS OVP
+  {
+    uint8_t ctrl1 = CHARGER_CTRL_1_CONV_STRN_STRONG | CHARGER_CTRL_1_VBUS_OVP_18V;
+    if (this->thermal_regulation_threshold_ > 90) {
+      ctrl1 |= CHARGER_CTRL_1_TREG;  // 120°C
+    }
+    if (!this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_1, ctrl1)) {
+      ESP_LOGE(TAG, "Failed to write CHARGER_CTRL_1");
+      return false;
+    }
+  }
+  
+  // REG 0x1A: NTC_CTRL_0 - TS monitoring
+  {
+    uint8_t ntc_ctrl = 0;
+    if (!this->ts_monitoring_enabled_) {
+      ntc_ctrl |= NTC_CTRL_0_TS_IGNORE;
+      ESP_LOGW(TAG, "TS monitoring DISABLED");
+    }
+    if (!this->write_register_byte_(BQ25628E_REG_NTC_CTRL_0, ntc_ctrl)) {
+      ESP_LOGE(TAG, "Failed to write NTC_CTRL_0");
+      return false;
+    }
+  }
+  
+  // REG 0x26: ADC_CTRL - Enable continuous ADC with averaging
+  // Bit 7: ADC_EN, Bit 6: ADC_RATE (continuous), Bits 5:4: ADC_SAMPLE (10-bit), Bit 3: ADC_AVG
+  {
+    uint8_t adc_ctrl = 0x80 | 0x40 | (0x02 << 4) | 0x08;  // 0xE8
+    if (!this->write_register_byte_(BQ25628E_REG_ADC_CTRL, adc_ctrl)) {
+      ESP_LOGE(TAG, "Failed to write ADC_CTRL");
+      return false;
+    }
+  }
+  
+  // REG 0x27: ADC_DIS - Enable all ADC channels
+  if (!this->write_register_byte_(BQ25628E_REG_ADC_DIS, 0x00)) {
+    ESP_LOGE(TAG, "Failed to write ADC_DIS");
     return false;
   }
-  adc_ctrl |= 0x80;  // ADC_EN (bit 7)
-  adc_ctrl = (adc_ctrl & ~0x30) | (0x02 << 4);  // ADC_SAMPLE (bits 5:4) = 10b (10-bit)
-  adc_ctrl |= 0x08;  // ADC_AVG (bit 3)
-  if (!this->write_register_byte_(BQ25628E_REG_ADC_CTRL, adc_ctrl)) {
-    ESP_LOGE(TAG, "Failed to write ADC_CONTROL");
-    return false;
-  }
-  ESP_LOGCONFIG(TAG, "✓ ADC enabled (10-bit, averaging)");
   
   // ===========================================================================
-  // INTERRUPT MASK CONFIGURATION
+  // INTERRUPT MASKS - Batch write (registers 0x23-0x25)
   // ===========================================================================
-  
-  // REG 0x23: CHARGER_MASK_0 - Mask ADC_DONE (bit 6), enable regulation/timer interrupts
-  if (!this->write_register_byte_(BQ25628E_REG_CHARGER_MASK_0, 0x40)) {
-    ESP_LOGE(TAG, "Failed to write CHARGER_MASK_0");
+  if (!this->write_register_byte_(BQ25628E_REG_CHARGER_MASK_0, 0x40) ||  // Mask ADC_DONE
+      !this->write_register_byte_(BQ25628E_REG_CHARGER_MASK_1, 0x00) ||  // Enable CHG/VBUS interrupts
+      !this->write_register_byte_(BQ25628E_REG_FAULT_MASK_0, 0x00)) {    // Enable fault interrupts
+    ESP_LOGE(TAG, "Failed to configure interrupt masks");
     return false;
   }
   
-  // REG 0x24: CHARGER_MASK_1 - Enable charge and VBUS status change interrupts
-  if (!this->write_register_byte_(BQ25628E_REG_CHARGER_MASK_1, 0x00)) {
-    ESP_LOGE(TAG, "Failed to write CHARGER_MASK_1");
-    return false;
-  }
-  
-  // REG 0x25: FAULT_MASK_0 - Enable all fault interrupts
-  if (!this->write_register_byte_(BQ25628E_REG_FAULT_MASK_0, 0x00)) {
-    ESP_LOGE(TAG, "Failed to write FAULT_MASK_0");
-    return false;
-  }
-  ESP_LOGCONFIG(TAG, "✓ Interrupt masks configured");
-  
-  delay(50);
-  
-  ESP_LOGCONFIG(TAG, "BQ25628E configuration complete");
+  ESP_LOGCONFIG(TAG, "BQ25628E configured: ICHG=%.0fmA, VREG=%.0fmV, IINDPM=%.0fmA, VINDPM=%.0fmV, TREG=%d°C",
+                this->charge_current_limit_ * 1000, this->charge_voltage_limit_ * 1000,
+                this->input_current_limit_ * 1000, this->input_voltage_limit_ * 1000,
+                this->thermal_regulation_threshold_ > 90 ? 120 : 60);
   
   return true;
 }

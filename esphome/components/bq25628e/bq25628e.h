@@ -502,7 +502,6 @@ class BQ25628EComponent : public PollingComponent, public i2c::I2CDevice {
 
   bool read_adc_values_();
   bool configure_charger_();
-  bool configure_charger_optimized_();  // Optimized boot configuration with minimal I2C ops
   bool write_register_byte_(uint8_t reg, uint8_t value);
   bool read_register_byte_(uint8_t reg, uint8_t &value);
   bool read_register_word_(uint8_t reg, uint16_t &value);
