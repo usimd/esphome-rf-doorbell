@@ -233,12 +233,22 @@ bool BQ25628EComponent::configure_charger_() {
       ESP_LOGE(TAG, "Failed to read CHARGER_CTRL_3");
       return false;
     }
+    ESP_LOGI(TAG, "CHARGER_CTRL_3 before: 0x%02X (EN_EXTILIM=%d)", ctrl3, (ctrl3 >> 2) & 1);
     ctrl3 &= ~CHARGER_CTRL_3_EN_EXTILIM;  // Clear bit 2: Use IINDPM register, not ILIM pin
     if (!this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_3, ctrl3)) {
       ESP_LOGE(TAG, "Failed to write CHARGER_CTRL_3");
       return false;
     }
-    ESP_LOGD(TAG, "Disabled EN_EXTILIM, using IINDPM register for input current limit");
+    // Verify the write took effect
+    uint8_t ctrl3_verify;
+    if (this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_3, ctrl3_verify)) {
+      ESP_LOGI(TAG, "CHARGER_CTRL_3 after: 0x%02X (EN_EXTILIM=%d)", ctrl3_verify, (ctrl3_verify >> 2) & 1);
+      if (ctrl3_verify & CHARGER_CTRL_3_EN_EXTILIM) {
+        ESP_LOGE(TAG, "⚠️ EN_EXTILIM write FAILED - still set!");
+      } else {
+        ESP_LOGI(TAG, "✓ EN_EXTILIM disabled successfully, using IINDPM register for input current limit");
+      }
+    }
   }
   
   // REG 0x1A: NTC_CTRL_0 - TS monitoring
