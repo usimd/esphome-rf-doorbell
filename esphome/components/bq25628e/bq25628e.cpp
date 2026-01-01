@@ -183,16 +183,28 @@ bool BQ25628EComponent::configure_charger_() {
   // 8-BIT CONTROL REGISTERS - Direct writes (no RMW needed, we control all bits)
   // ===========================================================================
   
-  // REG 0x14: CHG_CTRL - Charge termination and recharge settings
+  // REG 0x14: CHG_CTRL - Charge control settings (per datasheet SLUSFA4C)
+  // Bit 7: Q1_FULLON=0, Bit 6: Q4_FULLON=0, Bit 5: ITRICKLE=0
+  // Bits 4:3: TOPOFF_TMR=01 (17 mins), Bit 2: EN_TERM, Bit 1: VINDPM_BAT_TRACK=1, Bit 0: VRECHG=0
   {
     uint8_t chg_ctrl = 0;
-    if (this->termination_enabled_) chg_ctrl |= CHG_CTRL_EN_TERM;
-    if (this->vindpm_battery_tracking_) chg_ctrl |= CHG_CTRL_VINDPM_BAT_TRACK;
-    if (this->recharge_threshold_ > 0.15f) chg_ctrl |= CHG_CTRL_VRECHG_MASK;  // 200mV vs 100mV
+    // Top-off timer: 17 min (01b in bits 4:3)
+    chg_ctrl |= (0x01 << CHG_CTRL_TOPOFF_TMR_SHIFT);  // 0x08
+    // Enable termination if configured
+    if (this->termination_enabled_) chg_ctrl |= CHG_CTRL_EN_TERM;  // Bit 2
+    // Enable VINDPM battery tracking (keeps VINDPM above VBAT+400mV)
+    chg_ctrl |= CHG_CTRL_VINDPM_BAT_TRACK;  // Bit 1
+    // VRECHG=0 for 100mV recharge threshold (default)
     if (!this->write_register_byte_(BQ25628E_REG_CHG_CTRL, chg_ctrl)) {
       ESP_LOGE(TAG, "Failed to write CHG_CTRL");
       return false;
     }
+    ESP_LOGI(TAG, "CHG_CTRL=0x%02X: TOPOFF=%d, EN_TERM=%d, VINDPM_BAT_TRACK=%d, VRECHG=%d", 
+             chg_ctrl, 
+             (chg_ctrl >> CHG_CTRL_TOPOFF_TMR_SHIFT) & 0x03,
+             (chg_ctrl & CHG_CTRL_EN_TERM) ? 1 : 0,
+             (chg_ctrl & CHG_CTRL_VINDPM_BAT_TRACK) ? 1 : 0,
+             (chg_ctrl & CHG_CTRL_VRECHG) ? 1 : 0);
   }
   
   // REG 0x15: CHG_TMR_CTRL - Timer settings
@@ -469,24 +481,27 @@ bool BQ25628EComponent::read_adc_values_() {
   uint16_t status_reg_word;
   if (this->read_register_word_(BQ25628E_REG_CHG_STATUS_1, status_reg_word)) {
     uint8_t status_byte = status_reg_word & 0xFF;
-    // BQ25628E REG 0x1E bit layout:
-    // Bits [7:5] = VBUS_STAT (input source type)
+    // BQ25628E REG 0x1E bit layout (per datasheet SLUSFA4C):
+    // Bits [7:5] = RESERVED
     // Bits [4:3] = CHG_STAT (charge status)
-    // Bit [2] = PG_STAT (power good)
-    // Bit [1] = VBUS_OTG_STAT
-    // Bit [0] = Reserved
-    uint8_t vbus_stat = (status_byte >> 5) & 0x07;  // Bits 7:5: VBUS status
-    uint8_t chg_stat = (status_byte >> 3) & 0x03;   // Bits 4:3: Charge status
-    uint8_t pg_stat = (status_byte >> 2) & 0x01;    // Bit 2: Power Good
-    const char* vbus_status[] = {"No Input", "USB SDP", "USB CDP", "USB DCP", 
-                                  "HVDCP", "Unknown Adapter", "Non-Std Adapter", "OTG Mode"};
-    const char* chg_status[] = {"Not Charging", "Trickle/Precharge", "CC Fast Charge", "CV Taper"};
-    ESP_LOGD(TAG, "Status1 [0x1E=0x%02X]: VBUS=%s, CHG=%s, PG=%d", 
-             status_byte, vbus_status[vbus_stat], chg_status[chg_stat], pg_stat);
+    // Bits [2:0] = VBUS_STAT (VBUS source type)
+    uint8_t chg_stat = (status_byte >> 3) & 0x03;    // Bits 4:3: Charge status
+    uint8_t vbus_stat = status_byte & 0x07;          // Bits 2:0: VBUS status
+    // CHG_STAT: 00=Not Charging/Terminated, 01=Trickle/Pre/CC, 10=CV Taper, 11=Top-off
+    const char* chg_status[] = {"Not Charging", "Trickle/Pre/CC", "CV Taper", "Top-off"};
+    // VBUS_STAT: 000=No Input, 100=Unknown Adapter (only 2 defined values per datasheet)
+    const char* vbus_str;
+    switch(vbus_stat) {
+      case 0: vbus_str = "No Input"; break;
+      case 4: vbus_str = "Unknown Adapter"; break;
+      default: vbus_str = "Reserved"; break;
+    }
+    ESP_LOGD(TAG, "Status1 [0x1E=0x%02X]: VBUS=%s (%d), CHG=%s (%d)", 
+             status_byte, vbus_str, vbus_stat, chg_status[chg_stat], chg_stat);
     
-    // Additional diagnostics when power good but not charging
-    if (pg_stat == 1 && chg_stat == 0) {
-      ESP_LOGW(TAG, "⚠️ POWER GOOD but NOT CHARGING - investigating...");
+    // Additional diagnostics when adapter detected but not charging
+    if (vbus_stat == 4 && chg_stat == 0) {
+      ESP_LOGW(TAG, "⚠️ ADAPTER DETECTED but NOT CHARGING - investigating...");
       
       // Read key control registers to diagnose
       uint8_t ctrl0, ctrl3;
@@ -503,24 +518,26 @@ bool BQ25628EComponent::read_adc_values_() {
         ESP_LOGW(TAG, "   CTRL3=0x%02X: EN_EXTILIM=%d", ctrl3, (ctrl3 >> 2) & 1);
       }
       
-      // Check if battery is already at or above VREG (fully charged)
+      // Check if battery is already at or above VREG (fully charged / terminated)
       uint16_t raw_vbat;
       if (this->read_register_word_(BQ25628E_REG_VBAT_ADC, raw_vbat)) {
         uint16_t vbat_adc = (raw_vbat >> 1) & 0x0FFF;
         float vbat_v = vbat_adc * VBAT_ADC_STEP;
         float vreg_v = this->charge_voltage_limit_;
-        ESP_LOGW(TAG, "   VBAT=%.3fV, VREG=%.3fV", vbat_v, vreg_v);
-        if (vbat_v >= vreg_v - 0.050f) {
-          ESP_LOGI(TAG, "   ✓ Battery near full (VBAT >= VREG - 50mV), charging completed normally");
-        } else if (vbat_v < vreg_v - 0.100f) {
-          ESP_LOGW(TAG, "   Battery needs charging (VBAT < VREG - 100mV)");
+        float vrechg_threshold = vreg_v - 0.100f;  // VRECHG=0: 100mV below VREG
+        ESP_LOGW(TAG, "   VBAT=%.3fV, VREG=%.3fV, VRECHG=%.3fV", vbat_v, vreg_v, vrechg_threshold);
+        if (vbat_v >= vrechg_threshold) {
+          ESP_LOGI(TAG, "   ✓ Battery above VRECHG threshold - charge terminated normally");
+          ESP_LOGI(TAG, "   (Will resume when VBAT drops below %.3fV)", vrechg_threshold);
+        } else {
+          ESP_LOGW(TAG, "   Battery below VRECHG - should be charging!");
         }
       }
     }
     
-    // Detect poor source lockout and provide detailed diagnosis
-    if (vbus_stat == 0 && pg_stat == 0) {  // No input AND no power good
-      ESP_LOGW(TAG, "⚠️ NO INPUT POWER! VBUS_STAT=000b, PG_STAT=0");
+    // Detect no input power condition
+    if (vbus_stat == 0) {
+      ESP_LOGW(TAG, "⚠️ NO INPUT POWER DETECTED! VBUS_STAT=000b");
       
       // Read VBUS and VBAT ADC to diagnose the root cause
       uint16_t raw_vbus, raw_vbat;

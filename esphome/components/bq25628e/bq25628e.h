@@ -105,17 +105,22 @@ static const float ITERM_MIN = 0.005f;   // 5mA
 static const float ITERM_MAX = 0.31f;    // 310mA
 static const float ITERM_DEFAULT = 0.02f;  // 20mA (POR)
 
-// REG0x14 Charge Control bit masks
-static const uint8_t CHG_CTRL_Q1_FULLON = 0x80;         // Bit 7: Force RBFET low resistance
-static const uint8_t CHG_CTRL_Q4_FULLON = 0x40;         // Bit 6: Force BATFET low resistance
-static const uint8_t CHG_CTRL_ITRICKLE = 0x20;          // Bit 5: Trickle current (0=10mA, 1=40mA)
-static const uint8_t CHG_CTRL_TOPOFF_TMR_MASK = 0x18;   // Bits 4:3: Top-off timer
+// REG0x14 Charge Control bit masks (BQ25628E datasheet SLUSFA4C, Address = 14h, Reset = 06h)
+// Bit 7: Q1_FULLON - Force RBFET low resistance (26mOhm)
+// Bit 6: Q4_FULLON - Force BATFET low resistance (15mOhm)
+// Bit 5: ITRICKLE - Trickle charge current control
+// Bits 4:3: TOPOFF_TMR - Top-off timer (00=disabled, 01=17min, 10=35min, 11=52min)
+// Bit 2: EN_TERM - Enable charge termination (POR=1)
+// Bit 1: VINDPM_BAT_TRACK - Track VBAT for VINDPM (POR=1)
+// Bit 0: VRECHG - Recharge threshold (0=100mV, 1=200mV below VREG)
+static const uint8_t CHG_CTRL_Q1_FULLON = 0x80;          // Bit 7
+static const uint8_t CHG_CTRL_Q4_FULLON = 0x40;          // Bit 6
+static const uint8_t CHG_CTRL_ITRICKLE = 0x20;           // Bit 5
+static const uint8_t CHG_CTRL_TOPOFF_TMR_MASK = 0x18;    // Bits 4:3
 static const uint8_t CHG_CTRL_TOPOFF_TMR_SHIFT = 3;
-static const uint8_t CHG_CTRL_EN_TERM = 0x04;           // Bit 2: Enable termination
-static const uint8_t CHG_CTRL_VINDPM_BAT_TRACK = 0x02;  // Bit 1: VINDPM battery tracking
-static const uint8_t CHG_CTRL_VRECHG = 0x01;            // Bit 0: Recharge threshold (0=100mV, 1=200mV)
-static const uint8_t CHG_CTRL_VRECHG_MASK = 0x03;       // Bits 1:0: Recharge threshold mask
-static const uint8_t CHG_CTRL_VRECHG_SHIFT = 0;
+static const uint8_t CHG_CTRL_EN_TERM = 0x04;            // Bit 2 (POR=1)
+static const uint8_t CHG_CTRL_VINDPM_BAT_TRACK = 0x02;   // Bit 1 (POR=1)
+static const uint8_t CHG_CTRL_VRECHG = 0x01;             // Bit 0 (0=100mV, 1=200mV)
 
 // Top-off timer values
 enum TopOffTimer {
