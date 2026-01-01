@@ -133,17 +133,11 @@ bool BQ25628EComponent::configure_charger_() {
   }
   
   // REG 0x08-0x09: VINDPM (Input Voltage Limit)
-  // VINDPM[2:0] in REG0x08[7:5], VINDPM[8:3] in REG0x09[5:0]
-  // Range: 3800mV - 16800mV, Step: 40mV
-  {
-    uint16_t vindpm_mv = static_cast<uint16_t>(this->input_voltage_limit_ * 1000 + 0.5f);
-    vindpm_mv = std::max(static_cast<uint16_t>(3800), std::min(vindpm_mv, static_cast<uint16_t>(16800)));
-    uint16_t code = (vindpm_mv - 3800) / 40;
-    uint16_t word = ((code >> 3) << 8) | ((code & 0x07) << 5);
-    if (!this->write_register_word_(BQ25628E_REG_VINDPM_CTRL, word)) {
-      ESP_LOGE(TAG, "Failed to set VINDPM");
-      return false;
-    }
+  // Uses set_input_voltage_limit_reg_() for correct encoding: code = voltage_mV / 40
+  // (NO offset subtraction - datasheet shows 3800mV = 0x5F = 95, and 95 * 40 = 3800)
+  if (!this->set_input_voltage_limit_reg_(this->input_voltage_limit_)) {
+    ESP_LOGE(TAG, "Failed to set VINDPM");
+    return false;
   }
   
   // REG 0x0E-0x0F: VSYSMIN (Minimum System Voltage)
