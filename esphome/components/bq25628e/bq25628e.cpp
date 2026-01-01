@@ -469,16 +469,58 @@ bool BQ25628EComponent::read_adc_values_() {
   uint16_t status_reg_word;
   if (this->read_register_word_(BQ25628E_REG_CHG_STATUS_1, status_reg_word)) {
     uint8_t status_byte = status_reg_word & 0xFF;
-    uint8_t vbus_stat = status_byte & 0x07;  // Bits 2:0: VBUS status
-    uint8_t chg_stat = (status_byte >> 3) & 0x03;  // Bits 4:3: Charge status
-    const char* vbus_status[] = {"No Power", "Reserved", "Reserved", "Reserved", 
-                                  "Unknown Adapter", "Reserved", "Reserved", "Reserved"};
-    const char* chg_status[] = {"Not Charging", "CC/Trickle/Precharge", "CV Taper", "Top-off"};
-    ESP_LOGD(TAG, "Status1 [0x1E]: VBUS=%s, CHG=%s", vbus_status[vbus_stat], chg_status[chg_stat]);
+    // BQ25628E REG 0x1E bit layout:
+    // Bits [7:5] = VBUS_STAT (input source type)
+    // Bits [4:3] = CHG_STAT (charge status)
+    // Bit [2] = PG_STAT (power good)
+    // Bit [1] = VBUS_OTG_STAT
+    // Bit [0] = Reserved
+    uint8_t vbus_stat = (status_byte >> 5) & 0x07;  // Bits 7:5: VBUS status
+    uint8_t chg_stat = (status_byte >> 3) & 0x03;   // Bits 4:3: Charge status
+    uint8_t pg_stat = (status_byte >> 2) & 0x01;    // Bit 2: Power Good
+    const char* vbus_status[] = {"No Input", "USB SDP", "USB CDP", "USB DCP", 
+                                  "HVDCP", "Unknown Adapter", "Non-Std Adapter", "OTG Mode"};
+    const char* chg_status[] = {"Not Charging", "Trickle/Precharge", "CC Fast Charge", "CV Taper"};
+    ESP_LOGD(TAG, "Status1 [0x1E=0x%02X]: VBUS=%s, CHG=%s, PG=%d", 
+             status_byte, vbus_status[vbus_stat], chg_status[chg_stat], pg_stat);
+    
+    // Additional diagnostics when power good but not charging
+    if (pg_stat == 1 && chg_stat == 0) {
+      ESP_LOGW(TAG, "⚠️ POWER GOOD but NOT CHARGING - investigating...");
+      
+      // Read key control registers to diagnose
+      uint8_t ctrl0, ctrl3;
+      if (this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, ctrl0)) {
+        ESP_LOGW(TAG, "   CTRL0=0x%02X: EN_CHG=%d, EN_HIZ=%d", ctrl0, (ctrl0 >> 5) & 1, (ctrl0 >> 7) & 1);
+        if ((ctrl0 & 0x20) == 0) {
+          ESP_LOGE(TAG, "   ❌ EN_CHG=0 - Charging is DISABLED!");
+        }
+        if (ctrl0 & 0x80) {
+          ESP_LOGE(TAG, "   ❌ EN_HIZ=1 - High impedance mode ENABLED!");
+        }
+      }
+      if (this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_3, ctrl3)) {
+        ESP_LOGW(TAG, "   CTRL3=0x%02X: EN_EXTILIM=%d", ctrl3, (ctrl3 >> 2) & 1);
+      }
+      
+      // Check if battery is already at or above VREG (fully charged)
+      uint16_t raw_vbat;
+      if (this->read_register_word_(BQ25628E_REG_VBAT_ADC, raw_vbat)) {
+        uint16_t vbat_adc = (raw_vbat >> 1) & 0x0FFF;
+        float vbat_v = vbat_adc * VBAT_ADC_STEP;
+        float vreg_v = this->charge_voltage_limit_;
+        ESP_LOGW(TAG, "   VBAT=%.3fV, VREG=%.3fV", vbat_v, vreg_v);
+        if (vbat_v >= vreg_v - 0.050f) {
+          ESP_LOGI(TAG, "   ✓ Battery near full (VBAT >= VREG - 50mV), charging completed normally");
+        } else if (vbat_v < vreg_v - 0.100f) {
+          ESP_LOGW(TAG, "   Battery needs charging (VBAT < VREG - 100mV)");
+        }
+      }
+    }
     
     // Detect poor source lockout and provide detailed diagnosis
-    if (vbus_stat == 0) {  // VBUS_STAT = 000b = "No Power"
-      ESP_LOGW(TAG, "⚠️ POOR SOURCE LOCKOUT! VBUS_STAT=000b (Not powered from VBUS)");
+    if (vbus_stat == 0 && pg_stat == 0) {  // No input AND no power good
+      ESP_LOGW(TAG, "⚠️ NO INPUT POWER! VBUS_STAT=000b, PG_STAT=0");
       
       // Read VBUS and VBAT ADC to diagnose the root cause
       uint16_t raw_vbus, raw_vbat;
