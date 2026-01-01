@@ -1,6 +1,7 @@
 #include "bq25628e.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
+#include "esphome/core/application.h"
 
 namespace esphome {
 namespace bq25628e {
@@ -10,11 +11,20 @@ static const char *const TAG = "bq25628e";
 void BQ25628EComponent::setup() {
   ESP_LOGCONFIG(TAG, "Setting up BQ25628E...");
   
+  // Feed watchdog before long configuration sequence
+  App.feed_wdt();
+  
   if (!this->configure_charger_()) {
     ESP_LOGE(TAG, "Failed to configure BQ25628E");
     this->mark_failed();
     return;
   }
+  
+  // Feed watchdog after configuration
+  App.feed_wdt();
+  
+  // Mark component as ready for public API calls
+  this->is_ready_ = true;
   
   ESP_LOGCONFIG(TAG, "BQ25628E setup complete");
 }
@@ -74,6 +84,11 @@ void BQ25628EComponent::dump_config() {
 }
 
 void BQ25628EComponent::update() {
+  // Guard against calls before setup() completes
+  if (!this->is_ready_) {
+    return;
+  }
+  
   // Reset watchdog to prevent expiration (which disables charging)
   this->reset_watchdog();
   
@@ -146,6 +161,9 @@ bool BQ25628EComponent::configure_charger_() {
     return false;
   }
   
+  // Feed watchdog between register groups
+  App.feed_wdt();
+  
   // REG 0x10: IPRECHG (Pre-charge Current)
   if (!this->set_precharge_current_reg_(this->precharge_current_)) {
     ESP_LOGE(TAG, "Failed to set IPRECHG");
@@ -157,6 +175,9 @@ bool BQ25628EComponent::configure_charger_() {
     ESP_LOGE(TAG, "Failed to set ITERM");
     return false;
   }
+  
+  // Feed watchdog again
+  App.feed_wdt();
   
   // ===========================================================================
   // 8-BIT CONTROL REGISTERS - Direct writes (no RMW needed, we control all bits)
@@ -233,6 +254,9 @@ bool BQ25628EComponent::configure_charger_() {
     ESP_LOGE(TAG, "Failed to write ADC_DIS");
     return false;
   }
+  
+  // Feed watchdog before interrupt mask configuration
+  App.feed_wdt();
   
   // ===========================================================================
   // INTERRUPT MASKS - Batch write (registers 0x23-0x25)
@@ -383,11 +407,36 @@ bool BQ25628EComponent::read_adc_values_() {
     const char* chg_status[] = {"Not Charging", "CC/Trickle/Precharge", "CV Taper", "Top-off"};
     ESP_LOGD(TAG, "Status1 [0x1E]: VBUS=%s, CHG=%s", vbus_status[vbus_stat], chg_status[chg_stat]);
     
-    // Detect poor source lockout and warn user
+    // Detect poor source lockout and provide detailed diagnosis
     if (vbus_stat == 0) {  // VBUS_STAT = 000b = "No Power"
-      ESP_LOGW(TAG, "⚠️ POOR SOURCE LOCKOUT! VBUS failed qualification (voltage drop <3.6V when loaded)");
-      ESP_LOGW(TAG, "   Possible causes: Polyfuse tripped, weak supply, bad connection");
-      ESP_LOGW(TAG, "   Try: Press 'Recover from Poor Source Lockout' button or replace polyfuse F1");
+      ESP_LOGW(TAG, "⚠️ POOR SOURCE LOCKOUT! VBUS_STAT=000b (Not powered from VBUS)");
+      
+      // Read VBUS and VBAT ADC to diagnose the root cause
+      uint16_t raw_vbus, raw_vbat;
+      if (this->read_register_word_(BQ25628E_REG_VBUS_ADC, raw_vbus) &&
+          this->read_register_word_(BQ25628E_REG_VBAT_ADC, raw_vbat)) {
+        uint16_t vbus_adc = (raw_vbus >> 2) & 0x1FFF;
+        uint16_t vbat_adc = (raw_vbat >> 1) & 0x0FFF;
+        float vbus_v = vbus_adc * VBUS_ADC_STEP;
+        float vbat_v = vbat_adc * VBAT_ADC_STEP;
+        float delta = vbus_v - vbat_v;
+        
+        ESP_LOGW(TAG, "   VBUS_ADC=%.2fV, VBAT_ADC=%.2fV, Delta=%.0fmV", vbus_v, vbat_v, delta * 1000.0f);
+        ESP_LOGW(TAG, "   VSLEEPZ threshold: 115-340mV (typ 220mV) for REGN to turn on");
+        
+        if (delta < 0.340f) {
+          ESP_LOGW(TAG, "   ⚠️ SLEEP COMPARATOR: Delta %.0fmV may be < VSLEEPZ threshold!", delta * 1000.0f);
+          ESP_LOGW(TAG, "   REGN LDO won't turn on if VBUS < VBAT + VSLEEPZ");
+        }
+        if (vbus_v < 3.5f) {
+          ESP_LOGW(TAG, "   ⚠️ VBUS_UVLO: VBUS %.2fV < 3.5V (VVBUS_UVLOZ threshold)", vbus_v);
+        }
+        if (vbus_v < 3.6f) {
+          ESP_LOGW(TAG, "   ⚠️ POOR_SOURCE: VBUS %.2fV < 3.6V (VPOORSRC threshold)", vbus_v);
+        }
+        ESP_LOGW(TAG, "   Possible causes: High resistance in power path, polyfuse tripped, bad solder");
+        ESP_LOGW(TAG, "   Measure VBUS pin with multimeter while system running to compare with ADC");
+      }
     }
   }
 
@@ -414,6 +463,11 @@ bool BQ25628EComponent::read_adc_values_() {
 }
 
 bool BQ25628EComponent::set_charging_enabled(bool enabled) {
+  if (!this->is_ready_) {
+    ESP_LOGD(TAG, "set_charging_enabled called before setup complete, ignoring");
+    return false;
+  }
+  
   uint8_t reg_val;
   if (!this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, reg_val)) {
     return false;
@@ -435,6 +489,12 @@ bool BQ25628EComponent::set_charging_enabled(bool enabled) {
 }
 
 bool BQ25628EComponent::set_charge_current(float current_amps) {
+  // Guard against calls before setup() completes
+  if (!this->is_ready_) {
+    ESP_LOGD(TAG, "set_charge_current called before setup complete, ignoring");
+    return false;
+  }
+  
   if (current_amps < ICHG_MIN || current_amps > ICHG_MAX) {
     ESP_LOGE(TAG, "Charge current out of range: %.2f A", current_amps);
     return false;
@@ -449,6 +509,12 @@ bool BQ25628EComponent::set_charge_current(float current_amps) {
 }
 
 bool BQ25628EComponent::set_charge_voltage(float voltage_volts) {
+  // Guard against calls before setup() completes
+  if (!this->is_ready_) {
+    ESP_LOGD(TAG, "set_charge_voltage called before setup complete, ignoring");
+    return false;
+  }
+  
   if (voltage_volts < VBAT_MIN || voltage_volts > VBAT_MAX) {
     ESP_LOGE(TAG, "Charge voltage out of range: %.2f V", voltage_volts);
     return false;
@@ -463,6 +529,12 @@ bool BQ25628EComponent::set_charge_voltage(float voltage_volts) {
 }
 
 bool BQ25628EComponent::set_input_current(float current_amps) {
+  // Guard against calls before setup() completes
+  if (!this->is_ready_) {
+    ESP_LOGD(TAG, "set_input_current called before setup complete, ignoring");
+    return false;
+  }
+  
   if (current_amps < IINDPM_MIN || current_amps > IINDPM_MAX) {
     ESP_LOGE(TAG, "Input current out of range: %.2f A", current_amps);
     return false;
@@ -477,6 +549,12 @@ bool BQ25628EComponent::set_input_current(float current_amps) {
 }
 
 bool BQ25628EComponent::set_input_voltage(float voltage_volts) {
+  // Guard against calls before setup() completes
+  if (!this->is_ready_) {
+    ESP_LOGD(TAG, "set_input_voltage called before setup complete, ignoring");
+    return false;
+  }
+  
   if (voltage_volts < VINDPM_MIN || voltage_volts > VINDPM_MAX) {
     ESP_LOGE(TAG, "Input voltage limit out of range: %.2f V", voltage_volts);
     return false;
@@ -491,6 +569,11 @@ bool BQ25628EComponent::set_input_voltage(float voltage_volts) {
 }
 
 bool BQ25628EComponent::set_hiz_mode(bool enabled) {
+  if (!this->is_ready_) {
+    ESP_LOGD(TAG, "set_hiz_mode called before setup complete, ignoring");
+    return false;
+  }
+  
   uint8_t reg_val;
   if (!this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, reg_val)) {
     return false;
@@ -510,6 +593,10 @@ bool BQ25628EComponent::set_hiz_mode(bool enabled) {
 }
 
 bool BQ25628EComponent::reset_watchdog() {
+  if (!this->is_ready_) {
+    return false;
+  }
+  
   uint8_t reg_val;
   if (!this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, reg_val)) {
     return false;
@@ -524,6 +611,11 @@ bool BQ25628EComponent::reset_watchdog() {
 }
 
 bool BQ25628EComponent::reset_registers() {
+  if (!this->is_ready_) {
+    ESP_LOGD(TAG, "reset_registers called before setup complete, ignoring");
+    return false;
+  }
+  
   uint8_t reg_val;
   if (!this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_1, reg_val)) {
     return false;
@@ -541,6 +633,10 @@ bool BQ25628EComponent::reset_registers() {
 }
 
 uint8_t BQ25628EComponent::get_charge_status() {
+  if (!this->is_ready_) {
+    return 0xFF;  // Not ready, return error value
+  }
+  
   uint8_t status_reg;
   if (!this->read_register_byte_(BQ25628E_REG_CHG_STATUS_1, status_reg)) {
     return 0xFF;  // Error value
@@ -551,6 +647,8 @@ uint8_t BQ25628EComponent::get_charge_status() {
 }
 
 bool BQ25628EComponent::is_in_thermal_regulation() {
+  if (!this->is_ready_) return false;
+  
   uint16_t status_reg;
   if (!this->read_register_word_(BQ25628E_REG_CHG_STATUS_0, status_reg)) {
     return false;
@@ -559,6 +657,8 @@ bool BQ25628EComponent::is_in_thermal_regulation() {
 }
 
 bool BQ25628EComponent::is_in_vindpm_regulation() {
+  if (!this->is_ready_) return false;
+  
   uint16_t status_reg;
   if (!this->read_register_word_(BQ25628E_REG_CHG_STATUS_0, status_reg)) {
     return false;
@@ -567,6 +667,8 @@ bool BQ25628EComponent::is_in_vindpm_regulation() {
 }
 
 bool BQ25628EComponent::is_in_iindpm_regulation() {
+  if (!this->is_ready_) return false;
+  
   uint16_t status_reg;
   if (!this->read_register_word_(BQ25628E_REG_CHG_STATUS_0, status_reg)) {
     return false;
@@ -575,6 +677,8 @@ bool BQ25628EComponent::is_in_iindpm_regulation() {
 }
 
 bool BQ25628EComponent::has_fault() {
+  if (!this->is_ready_) return false;
+  
   uint16_t fault_reg;
   if (!this->read_register_word_(BQ25628E_REG_FAULT_STATUS_0, fault_reg)) {
     return false;
@@ -623,7 +727,7 @@ bool BQ25628EComponent::set_charge_current_reg_(float current) {
   // Bit-pack: ICHG[5:3] to REG0x03[2:0], preserve [7:3]
   reg03 = (reg03 & 0xF8) | ((ichg_val >> 3) & 0x07);
   
-  float actual = MIN + (ichg_val * STEP);
+  float actual = ichg_val * STEP;  // code × 40mA, no offset
   ESP_LOGD(TAG, "Setting charge current: %.3fA → %.3fA (0x%02X), REG0x02=0x%02X, REG0x03=0x%02X", 
            current, actual, ichg_val, reg02, reg03);
   

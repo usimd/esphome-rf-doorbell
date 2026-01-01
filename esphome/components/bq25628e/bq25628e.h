@@ -469,11 +469,23 @@ class BQ25628EComponent : public PollingComponent, public i2c::I2CDevice {
   bool is_in_iindpm_regulation();
   bool has_fault();
   
-  // Public register access for YAML lambdas
-  bool read_register_byte(uint8_t reg, uint8_t *value) { return read_register_byte_(reg, *value); }
-  bool read_register_word(uint8_t reg, uint16_t *value) { return read_register_word_(reg, *value); }
+  // Check if component is ready for use
+  bool is_ready() const { return is_ready_; }
+  
+  // Public register access for YAML lambdas (guarded)
+  bool read_register_byte(uint8_t reg, uint8_t *value) { 
+    if (!is_ready_) return false;
+    return read_register_byte_(reg, *value); 
+  }
+  bool read_register_word(uint8_t reg, uint16_t *value) { 
+    if (!is_ready_) return false;
+    return read_register_word_(reg, *value); 
+  }
 
  protected:
+  // Flag to indicate component is fully initialized
+  bool is_ready_{false};
+  
   sensor::Sensor *bus_voltage_sensor_{nullptr};
   sensor::Sensor *battery_voltage_sensor_{nullptr};
   sensor::Sensor *charge_current_sensor_{nullptr};
