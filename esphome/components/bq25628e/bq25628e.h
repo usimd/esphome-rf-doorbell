@@ -48,14 +48,14 @@ static const uint8_t BQ25628E_REG_PART_INFO = 0x38;  // Part Information
 static const uint8_t BQ25628E_REG_PART_INFORMATION = 0x38;  // Part Information (alias)
 
 // Mask registers for interrupt control
-static const uint8_t BQ25628E_REG_CHARGER_MASK_0 = 0x3D;  // Charger Status Mask 0
-static const uint8_t BQ25628E_REG_CHARGER_MASK_1 = 0x3E;  // Charger Status Mask 1  
-static const uint8_t BQ25628E_REG_FAULT_MASK_0 = 0x3F;    // Fault Status Mask 0
+static const uint8_t BQ25628E_REG_CHARGER_MASK_0 = 0x23;  // Charger Status Mask 0
+static const uint8_t BQ25628E_REG_CHARGER_MASK_1 = 0x24;  // Charger Status Mask 1  
+static const uint8_t BQ25628E_REG_FAULT_MASK_0 = 0x25;    // Fault Status Mask 0
 
 // Flag registers for interrupt status
-static const uint8_t BQ25628E_REG_CHARGER_FLAG_0 = 0x40;  // Charger Status Flag 0
-static const uint8_t BQ25628E_REG_CHARGER_FLAG_1 = 0x41;  // Charger Status Flag 1
-static const uint8_t BQ25628E_REG_FAULT_FLAG_0 = 0x42;    // Fault Status Flag 0
+static const uint8_t BQ25628E_REG_CHARGER_FLAG_0 = 0x20;  // Charger Status Flag 0
+static const uint8_t BQ25628E_REG_CHARGER_FLAG_1 = 0x21;  // Charger Status Flag 1
+static const uint8_t BQ25628E_REG_FAULT_FLAG_0 = 0x22;    // Fault Status Flag 0
 
 // ADC scaling factors from datasheet
 static const float VBUS_ADC_STEP = 0.00397f;  // 3.97mV per LSB (REG0x2C)
