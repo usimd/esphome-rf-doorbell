@@ -226,6 +226,21 @@ bool BQ25628EComponent::configure_charger_() {
     }
   }
   
+  // REG 0x19: CHARGER_CTRL_3 - Disable external ILIM, use IINDPM register only
+  {
+    uint8_t ctrl3;
+    if (!this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_3, ctrl3)) {
+      ESP_LOGE(TAG, "Failed to read CHARGER_CTRL_3");
+      return false;
+    }
+    ctrl3 &= ~CHARGER_CTRL_3_EN_EXTILIM;  // Clear bit 2: Use IINDPM register, not ILIM pin
+    if (!this->write_register_byte_(BQ25628E_REG_CHARGER_CTRL_3, ctrl3)) {
+      ESP_LOGE(TAG, "Failed to write CHARGER_CTRL_3");
+      return false;
+    }
+    ESP_LOGD(TAG, "Disabled EN_EXTILIM, using IINDPM register for input current limit");
+  }
+  
   // REG 0x1A: NTC_CTRL_0 - TS monitoring
   {
     uint8_t ntc_ctrl = 0;
@@ -289,6 +304,15 @@ bool BQ25628EComponent::configure_charger_() {
       // NTC_CTRL_2: TS_PREWARM (bits 7:6), TS_PRECOOL (bits 5:4), plus JEITA settings
       ESP_LOGD(TAG, "NTC thresholds: NTC1=0x%02X, NTC2=0x%02X (TS_HOT=%d, TS_WARM=%d, TS_COOL=%d, TS_COLD=%d)",
                ntc1, ntc2, ntc1 & 0x03, (ntc1 >> 2) & 0x03, (ntc1 >> 4) & 0x03, (ntc1 >> 6) & 0x03);
+    }
+    
+    // Read CHARGER_CTRL_3 to verify EN_EXTILIM is disabled
+    uint8_t ctrl3;
+    if (this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_3, ctrl3)) {
+      ESP_LOGD(TAG, "CHARGER_CTRL_3=0x%02X: EN_EXTILIM=%d (should be 0)", ctrl3, (ctrl3 >> 2) & 1);
+      if (ctrl3 & CHARGER_CTRL_3_EN_EXTILIM) {
+        ESP_LOGW(TAG, "⚠️ EN_EXTILIM is set - ILIM pin may be limiting input current!");
+      }
     }
     
     // Read fault status to check for TS faults
