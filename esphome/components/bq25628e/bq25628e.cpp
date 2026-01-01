@@ -440,12 +440,10 @@ bool BQ25628EComponent::set_charge_current(float current_amps) {
     return false;
   }
   
-  uint8_t ichg_val = (uint8_t)((current_amps - ICHG_MIN) / ICHG_STEP);
-  uint16_t ichg_word = ichg_val;
-  bool success = this->write_register_word_(BQ25628E_REG_ICHG_CTRL, ichg_word);
+  // Use the proper _reg_ function with correct encoding
+  bool success = this->set_charge_current_reg_(current_amps);
   if (success) {
     this->charge_current_limit_ = current_amps;
-    ESP_LOGI(TAG, "Charge current set to %.2f A", current_amps);
   }
   return success;
 }
@@ -456,12 +454,10 @@ bool BQ25628EComponent::set_charge_voltage(float voltage_volts) {
     return false;
   }
   
-  uint8_t vbat_val = (uint8_t)((voltage_volts - VBAT_MIN) / VBAT_STEP);
-  uint16_t vbat_word = vbat_val;
-  bool success = this->write_register_word_(BQ25628E_REG_VBAT_CTRL, vbat_word);
+  // Use the proper _reg_ function with correct encoding
+  bool success = this->set_charge_voltage_reg_(voltage_volts);
   if (success) {
     this->charge_voltage_limit_ = voltage_volts;
-    ESP_LOGI(TAG, "Charge voltage set to %.2f V", voltage_volts);
   }
   return success;
 }
@@ -472,12 +468,10 @@ bool BQ25628EComponent::set_input_current(float current_amps) {
     return false;
   }
   
-  uint8_t iindpm_val = (uint8_t)((current_amps - IINDPM_MIN) / IINDPM_STEP);
-  uint16_t iindpm_word = iindpm_val;
-  bool success = this->write_register_word_(BQ25628E_REG_IINDPM_CTRL, iindpm_word);
+  // Use the proper _reg_ function with correct encoding
+  bool success = this->set_input_current_limit_reg_(current_amps);
   if (success) {
     this->input_current_limit_ = current_amps;
-    ESP_LOGI(TAG, "Input current limit set to %.2f A", current_amps);
   }
   return success;
 }
@@ -488,12 +482,10 @@ bool BQ25628EComponent::set_input_voltage(float voltage_volts) {
     return false;
   }
   
-  uint8_t vindpm_val = (uint8_t)((voltage_volts - VINDPM_MIN) / VINDPM_STEP);
-  uint16_t vindpm_word = vindpm_val;
-  bool success = this->write_register_word_(BQ25628E_REG_VINDPM_CTRL, vindpm_word);
+  // Use the proper _reg_ function with correct encoding
+  bool success = this->set_input_voltage_limit_reg_(voltage_volts);
   if (success) {
     this->input_voltage_limit_ = voltage_volts;
-    ESP_LOGI(TAG, "Input voltage limit set to %.2f V", voltage_volts);
   }
   return success;
 }
@@ -610,8 +602,9 @@ bool BQ25628EComponent::set_charge_current_reg_(float current) {
     return false;
   }
 
-  // Round to nearest step
-  uint8_t ichg_val = static_cast<uint8_t>((current - MIN) / STEP + 0.5f);
+  // Encoding: code = current_mA / 40 (NO offset subtraction!)
+  // Datasheet: 40mA = code 1, 2000mA = code 50 (0x32)
+  uint8_t ichg_val = static_cast<uint8_t>((current * 1000.0f) / 40.0f + 0.5f);
   
   // Clamp to valid range (0x01-0x32)
   if (ichg_val < 0x01) ichg_val = 0x01;
