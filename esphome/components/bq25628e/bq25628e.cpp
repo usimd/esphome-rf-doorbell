@@ -482,13 +482,16 @@ bool BQ25628EComponent::read_adc_values_() {
     }
   }
   
-  // Read and publish die temperature - datasheet: 0.5C per LSB, -40C offset, bits 11:0
+  // Read and publish die temperature - datasheet: 0.5°C per LSB, 2's complement, bits 11:0
+  // POR: 0°C = 0h, Range: -40°C (0xFB0) to 140°C (0x118)
   if (this->die_temperature_sensor_ != nullptr) {
     uint16_t raw_tdie;
     if (this->read_register_word_(BQ25628E_REG_TDIE_ADC, raw_tdie)) {
       uint16_t tdie_adc = raw_tdie & 0x0FFF;  // Bits 11:0, 12-bit value
-      float tdie = (tdie_adc * TDIE_ADC_STEP) - TDIE_ADC_OFFSET;
-      ESP_LOGD(TAG, "TDIE raw: 0x%04X, ADC: %d, temperature: %.1f C", raw_tdie, tdie_adc, tdie);
+      // Sign-extend 12-bit 2's complement to signed int16_t
+      int16_t tdie_signed = (tdie_adc & 0x800) ? (tdie_adc | 0xF000) : tdie_adc;
+      float tdie = tdie_signed * TDIE_ADC_STEP;
+      ESP_LOGD(TAG, "TDIE raw: 0x%04X, ADC: %d, signed: %d, temperature: %.1f C", raw_tdie, tdie_adc, tdie_signed, tdie);
       this->die_temperature_sensor_->publish_state(tdie);
     } else {
       ESP_LOGW(TAG, "Failed to read TDIE");
