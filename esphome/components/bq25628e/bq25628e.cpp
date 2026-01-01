@@ -268,6 +268,41 @@ bool BQ25628EComponent::configure_charger_() {
     return false;
   }
   
+  // ===========================================================================
+  // VERIFY CONFIGURATION - Read back critical registers
+  // ===========================================================================
+  {
+    uint8_t ctrl0, ctrl1, ntc0;
+    if (this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_0, ctrl0) &&
+        this->read_register_byte_(BQ25628E_REG_CHARGER_CTRL_1, ctrl1) &&
+        this->read_register_byte_(BQ25628E_REG_NTC_CTRL_0, ntc0)) {
+      ESP_LOGD(TAG, "Control registers: CTRL0=0x%02X (EN_CHG=%d, EN_HIZ=%d, WD=%d), CTRL1=0x%02X, NTC0=0x%02X (TS_IGNORE=%d)",
+               ctrl0, (ctrl0 >> 5) & 1, (ctrl0 >> 7) & 1, (ctrl0 >> 3) & 3,
+               ctrl1, ntc0, (ntc0 >> 7) & 1);
+    }
+    
+    // Read TS thresholds
+    uint8_t ntc1, ntc2;
+    if (this->read_register_byte_(BQ25628E_REG_NTC_CTRL_1, ntc1) &&
+        this->read_register_byte_(BQ25628E_REG_NTC_CTRL_2, ntc2)) {
+      // NTC_CTRL_1: TS_COLD (bits 7:6), TS_COOL (bits 5:4), TS_WARM (bits 3:2), TS_HOT (bits 1:0)
+      // NTC_CTRL_2: TS_PREWARM (bits 7:6), TS_PRECOOL (bits 5:4), plus JEITA settings
+      ESP_LOGD(TAG, "NTC thresholds: NTC1=0x%02X, NTC2=0x%02X (TS_HOT=%d, TS_WARM=%d, TS_COOL=%d, TS_COLD=%d)",
+               ntc1, ntc2, ntc1 & 0x03, (ntc1 >> 2) & 0x03, (ntc1 >> 4) & 0x03, (ntc1 >> 6) & 0x03);
+    }
+    
+    // Read fault status to check for TS faults
+    uint8_t fault0;
+    if (this->read_register_byte_(BQ25628E_REG_FAULT_STATUS_0, fault0)) {
+      uint8_t ts_stat = fault0 & 0x07;
+      const char* ts_zone[] = {"NORMAL", "COLD", "HOT", "COOL", "WARM", "PRECOOL", "PREWARM", "BIAS_FAULT"};
+      ESP_LOGI(TAG, "Initial fault status: 0x%02X, TS_STAT=%d (%s)", fault0, ts_stat, ts_zone[ts_stat]);
+      if (ts_stat == 2) {
+        ESP_LOGW(TAG, "⚠️ Battery temperature TOO HOT - charging disabled!");
+      }
+    }
+  }
+  
   ESP_LOGCONFIG(TAG, "BQ25628E configured: ICHG=%.0fmA, VREG=%.0fmV, IINDPM=%.0fmA, VINDPM=%.0fmV, TREG=%d°C",
                 this->charge_current_limit_ * 1000, this->charge_voltage_limit_ * 1000,
                 this->input_current_limit_ * 1000, this->input_voltage_limit_ * 1000,
@@ -445,17 +480,23 @@ bool BQ25628EComponent::read_adc_values_() {
   if (this->read_register_word_(BQ25628E_REG_FAULT_STATUS_0, fault_reg)) {
     uint8_t fault_byte = fault_reg & 0xFF;  // LSB contains fault bits
     uint8_t ts_stat = fault_byte & 0x07;  // Bits 2:0: TS temperature zone
+    
+    // Decode TS_STAT zone - always show for debugging
+    const char* ts_zone[] = {"NORMAL", "COLD", "HOT", "COOL", "WARM", "PRECOOL", "PREWARM", "BIAS_FAULT"};
+    ESP_LOGD(TAG, "Fault Status: 0x%02X, TS_ZONE=%d (%s)", fault_byte, ts_stat, ts_zone[ts_stat]);
+    
     if (fault_byte != 0) {
-      ESP_LOGW(TAG, "Fault Status: 0x%02X - VBUS_FAULT:%d BAT_FAULT:%d SYS_FAULT:%d TSHUT:%d TS_ZONE:%d",
-               fault_byte,
+      ESP_LOGW(TAG, "⚠️ Fault detected: VBUS_FAULT:%d BAT_FAULT:%d SYS_FAULT:%d TSHUT:%d",
                (fault_byte & 0x80) ? 1 : 0,  // Bit 7: VBUS fault (OVP or sleep)
                (fault_byte & 0x40) ? 1 : 0,  // Bit 6: Battery fault (OCP or OVP)
                (fault_byte & 0x20) ? 1 : 0,  // Bit 5: VSYS fault (short or OVP)
-               (fault_byte & 0x08) ? 1 : 0,  // Bit 3: Thermal shutdown
-               ts_stat);  // Bits 2:0: Temperature zone (0=normal, 1=cold, 2=hot, etc)
-      // Decode TS_STAT zone
-      const char* ts_zone[] = {"NORMAL", "COLD/NO_BIAS", "HOT", "COOL", "WARM", "PRECOOL", "PREWARM", "BIAS_FAULT"};
-      ESP_LOGW(TAG, "TS Zone: %s", ts_zone[ts_stat]);
+               (fault_byte & 0x08) ? 1 : 0); // Bit 3: Thermal shutdown
+    }
+    
+    if (ts_stat == 2) {
+      ESP_LOGW(TAG, "⚠️ Battery temperature HOT - charging suspended until cooler!");
+    } else if (ts_stat == 1) {
+      ESP_LOGW(TAG, "⚠️ Battery temperature COLD - charging suspended until warmer!");
     }
   }
   
