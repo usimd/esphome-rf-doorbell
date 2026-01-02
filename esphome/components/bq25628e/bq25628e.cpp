@@ -825,10 +825,10 @@ bool BQ25628EComponent::has_fault() {
 // ============================================================================
 
 bool BQ25628EComponent::set_charge_current_reg_(float current) {
-  // REG 0x02/0x03 - ICHG: Charge Current Regulation Limit
+  // REG 0x02/0x03 - ICHG: Charge Current Regulation Limit (16-bit register)
+  // 16-bit layout: bits[15:11]=Reserved, bits[10:5]=ICHG, bits[4:0]=Reserved
   // Range: 40mA - 2000mA, Step: 40mA
-  // ICHG[2:0] in REG0x02[7:5], ICHG[5:3] in REG0x03[2:0]
-  // POR: 320mA (0x08)
+  // POR: 320mA (code 8 = 0x08)
   // NOTE: When Q4_FULLON=1, minimum is 80mA
 
   const float MIN = 0.040f;  // 40mA
@@ -840,7 +840,7 @@ bool BQ25628EComponent::set_charge_current_reg_(float current) {
     return false;
   }
 
-  // Encoding: code = current_mA / 40 (NO offset subtraction!)
+  // Encoding: code = current_mA / 40
   // Datasheet: 40mA = code 1, 2000mA = code 50 (0x32)
   uint8_t ichg_val = static_cast<uint8_t>((current * 1000.0f) / 40.0f + 0.5f);
   
@@ -848,30 +848,24 @@ bool BQ25628EComponent::set_charge_current_reg_(float current) {
   if (ichg_val < 0x01) ichg_val = 0x01;
   if (ichg_val > 0x32) ichg_val = 0x32;
 
-  // Bit-pack: ICHG[2:0] to REG0x02[7:5]
-  uint8_t reg02 = (ichg_val & 0x07) << 5;  // Bits [4:0] reserved, write 0
-  
-  // Read REG0x03 to preserve undefined bits [7:3]
-  uint8_t reg03;
-  if (!this->read_register_byte_(BQ25628E_REG_ICHG_CTRL + 1, reg03)) {
-    ESP_LOGE(TAG, "Failed to read REG0x03 for ICHG configuration");
+  // Build 16-bit word: ICHG goes in bits [10:5]
+  // Reserved bits are read-only, so we should preserve them by reading first
+  uint16_t word;
+  if (!this->read_register_word_(BQ25628E_REG_ICHG_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to read REG0x02/0x03 for ICHG configuration");
     return false;
   }
   
-  // Bit-pack: ICHG[5:3] to REG0x03[2:0], preserve [7:3]
-  reg03 = (reg03 & 0xF8) | ((ichg_val >> 3) & 0x07);
+  // Clear ICHG bits [10:5] and set new value, preserve reserved bits
+  word = (word & 0xF81F) | ((static_cast<uint16_t>(ichg_val) & 0x3F) << 5);
   
-  float actual = ichg_val * STEP;  // code × 40mA, no offset
-  ESP_LOGD(TAG, "Setting charge current: %.3fA → %.3fA (0x%02X), REG0x02=0x%02X, REG0x03=0x%02X", 
-           current, actual, ichg_val, reg02, reg03);
+  float actual = ichg_val * STEP;
+  ESP_LOGD(TAG, "Setting charge current: %.3fA → %.3fA (code=%d), word=0x%04X", 
+           current, actual, ichg_val, word);
   
-  if (!this->write_register_byte_(BQ25628E_REG_ICHG_CTRL, reg02)) {
-    ESP_LOGE(TAG, "Failed to write REG0x02 (ICHG)");
-    return false;
-  }
-  
-  if (!this->write_register_byte_(BQ25628E_REG_ICHG_CTRL + 1, reg03)) {
-    ESP_LOGE(TAG, "Failed to write REG0x03 (ICHG)");
+  // Write as atomic 16-bit word
+  if (!this->write_register_word_(BQ25628E_REG_ICHG_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to write ICHG register");
     return false;
   }
   
@@ -880,9 +874,9 @@ bool BQ25628EComponent::set_charge_current_reg_(float current) {
 }
 
 bool BQ25628EComponent::set_charge_voltage_reg_(float voltage) {
-  // REG 0x04/0x05 - VREG: Charge Voltage Regulation Limit
-  // VREG[4:0] in REG0x04[7:3], VREG[8:5] in REG0x05[3:0]
-  // POR: 4200mV (0x1A4), Range: 3500mV-4800mV (0x15E-0x1E0), Step: 10mV
+  // REG 0x04/0x05 - VREG: Charge Voltage Regulation Limit (16-bit register)
+  // 16-bit layout: bits[15:12]=Reserved, bits[11:3]=VREG, bits[2:0]=Reserved
+  // POR: 4200mV (code 0x1A4 = 420), Range: 3500mV-4800mV, Step: 10mV
   
   const float MIN = 3.500f;  // 3500mV
   const float MAX = 4.800f;  // 4800mV
@@ -902,34 +896,23 @@ bool BQ25628EComponent::set_charge_voltage_reg_(float voltage) {
   if (vreg_val < MIN_CODE) vreg_val = MIN_CODE;
   if (vreg_val > MAX_CODE) vreg_val = MAX_CODE;
   
-  // Read both registers to preserve reserved bits
-  uint8_t reg04, reg05;
-  if (!this->read_register_byte_(BQ25628E_REG_VBAT_CTRL, reg04)) {
-    ESP_LOGE(TAG, "Failed to read REG0x04 for VREG configuration");
-    return false;
-  }
-  if (!this->read_register_byte_(BQ25628E_REG_VBAT_CTRL + 1, reg05)) {
-    ESP_LOGE(TAG, "Failed to read REG0x05 for VREG configuration");
+  // Read current word to preserve reserved bits
+  uint16_t word;
+  if (!this->read_register_word_(BQ25628E_REG_VBAT_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to read REG0x04/0x05 for VREG configuration");
     return false;
   }
   
-  // Bit-pack: VREG[4:0] to REG0x04[7:3], preserve [2:0]
-  reg04 = (reg04 & 0x07) | ((vreg_val & 0x1F) << 3);
-  
-  // Bit-pack: VREG[8:5] to REG0x05[3:0], preserve [7:4]
-  reg05 = (reg05 & 0xF0) | ((vreg_val >> 5) & 0x0F);
+  // Clear VREG bits [11:3] and set new value, preserve reserved bits
+  word = (word & 0xF007) | ((vreg_val & 0x1FF) << 3);
   
   float actual = (vreg_val * 10.0f) / 1000.0f;
-  ESP_LOGD(TAG, "Setting charge voltage: %.3fV → %.3fV (0x%03X), REG0x04=0x%02X, REG0x05=0x%02X", 
-           voltage, actual, vreg_val, reg04, reg05);
+  ESP_LOGD(TAG, "Setting charge voltage: %.3fV → %.3fV (code=%d), word=0x%04X", 
+           voltage, actual, vreg_val, word);
   
-  if (!this->write_register_byte_(BQ25628E_REG_VBAT_CTRL, reg04)) {
-    ESP_LOGE(TAG, "Failed to write REG0x04 (VREG)");
-    return false;
-  }
-  
-  if (!this->write_register_byte_(BQ25628E_REG_VBAT_CTRL + 1, reg05)) {
-    ESP_LOGE(TAG, "Failed to write REG0x05 (VREG)");
+  // Write as atomic 16-bit word
+  if (!this->write_register_word_(BQ25628E_REG_VBAT_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to write VREG register");
     return false;
   }
   
@@ -938,10 +921,9 @@ bool BQ25628EComponent::set_charge_voltage_reg_(float voltage) {
 }
 
 bool BQ25628EComponent::set_input_current_limit_reg_(float current) {
-  // REG 0x06/0x07 - IINDPM: Input Current Regulation Limit
-  // IINDPM[3:0] in REG0x06[7:4], IINDPM[7:4] in REG0x07[3:0]
-  // POR: 3200mA (0xA0), Range: 100mA-3200mA (0x05-0xA0), Step: 20mA
-  // NOTE: Reset to POR on adapter removal
+  // REG 0x06/0x07 - IINDPM: Input Current Regulation Limit (16-bit register)
+  // 16-bit layout: bits[15:12]=Reserved, bits[11:4]=IINDPM, bits[3:0]=Reserved
+  // POR: 3200mA (code 0xA0 = 160), Range: 100mA-3200mA, Step: 20mA
   
   const float MIN = 0.100f;  // 100mA
   const float MAX = 3.200f;  // 3200mA
@@ -961,34 +943,23 @@ bool BQ25628EComponent::set_input_current_limit_reg_(float current) {
   if (iindpm_val < MIN_CODE) iindpm_val = MIN_CODE;
   if (iindpm_val > MAX_CODE) iindpm_val = MAX_CODE;
   
-  // Read both registers to preserve reserved bits
-  uint8_t reg06, reg07;
-  if (!this->read_register_byte_(BQ25628E_REG_IINDPM_CTRL, reg06)) {
-    ESP_LOGE(TAG, "Failed to read REG0x06 for IINDPM configuration");
-    return false;
-  }
-  if (!this->read_register_byte_(BQ25628E_REG_IINDPM_CTRL + 1, reg07)) {
-    ESP_LOGE(TAG, "Failed to read REG0x07 for IINDPM configuration");
+  // Read current word to preserve reserved bits
+  uint16_t word;
+  if (!this->read_register_word_(BQ25628E_REG_IINDPM_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to read REG0x06/0x07 for IINDPM configuration");
     return false;
   }
   
-  // Bit-pack: IINDPM[3:0] to REG0x06[7:4], preserve [3:0]
-  reg06 = (reg06 & 0x0F) | ((iindpm_val & 0x0F) << 4);
-  
-  // Bit-pack: IINDPM[7:4] to REG0x07[3:0], preserve [7:4]
-  reg07 = (reg07 & 0xF0) | ((iindpm_val >> 4) & 0x0F);
+  // Clear IINDPM bits [11:4] and set new value, preserve reserved bits
+  word = (word & 0xF00F) | ((static_cast<uint16_t>(iindpm_val) & 0xFF) << 4);
   
   float actual = (iindpm_val * 20.0f) / 1000.0f;
-  ESP_LOGD(TAG, "Setting input current limit: %.3fA → %.3fA (0x%02X), REG0x06=0x%02X, REG0x07=0x%02X", 
-           current, actual, iindpm_val, reg06, reg07);
+  ESP_LOGD(TAG, "Setting input current limit: %.3fA → %.3fA (code=%d), word=0x%04X", 
+           current, actual, iindpm_val, word);
   
-  if (!this->write_register_byte_(BQ25628E_REG_IINDPM_CTRL, reg06)) {
-    ESP_LOGE(TAG, "Failed to write REG0x06 (IINDPM)");
-    return false;
-  }
-  
-  if (!this->write_register_byte_(BQ25628E_REG_IINDPM_CTRL + 1, reg07)) {
-    ESP_LOGE(TAG, "Failed to write REG0x07 (IINDPM)");
+  // Write as atomic 16-bit word
+  if (!this->write_register_word_(BQ25628E_REG_IINDPM_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to write IINDPM register");
     return false;
   }
   
@@ -997,9 +968,9 @@ bool BQ25628EComponent::set_input_current_limit_reg_(float current) {
 }
 
 bool BQ25628EComponent::set_input_voltage_limit_reg_(float voltage) {
-  // REG 0x08/0x09 - VINDPM: Input Voltage Regulation Limit
-  // VINDPM[2:0] in REG0x08[7:5], VINDPM[8:3] in REG0x09[5:0]
-  // POR: 4600mV (0x73), Range: 3800mV-16800mV (0x5F-0x1A4), Step: 40mV
+  // REG 0x08/0x09 - VINDPM: Input Voltage Regulation Limit (16-bit register)
+  // 16-bit layout: bits[15:14]=Reserved, bits[13:5]=VINDPM, bits[4:0]=Reserved
+  // POR: 4600mV (code 0x73 = 115), Range: 3800mV-16800mV, Step: 40mV
   
   const float MIN = 3.800f;  // 3800mV
   const float MAX = 16.800f; // 16800mV
@@ -1019,34 +990,23 @@ bool BQ25628EComponent::set_input_voltage_limit_reg_(float voltage) {
   if (vindpm_val < MIN_CODE) vindpm_val = MIN_CODE;
   if (vindpm_val > MAX_CODE) vindpm_val = MAX_CODE;
   
-  // Read both registers to preserve reserved bits
-  uint8_t reg08, reg09;
-  if (!this->read_register_byte_(BQ25628E_REG_VINDPM_CTRL, reg08)) {
-    ESP_LOGE(TAG, "Failed to read REG0x08 for VINDPM configuration");
-    return false;
-  }
-  if (!this->read_register_byte_(BQ25628E_REG_VINDPM_CTRL + 1, reg09)) {
-    ESP_LOGE(TAG, "Failed to read REG0x09 for VINDPM configuration");
+  // Read current word to preserve reserved bits
+  uint16_t word;
+  if (!this->read_register_word_(BQ25628E_REG_VINDPM_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to read REG0x08/0x09 for VINDPM configuration");
     return false;
   }
   
-  // Bit-pack: VINDPM[2:0] to REG0x08[7:5], preserve [4:0]
-  reg08 = (reg08 & 0x1F) | ((vindpm_val & 0x07) << 5);
-  
-  // Bit-pack: VINDPM[8:3] to REG0x09[5:0], preserve [7:6]
-  reg09 = (reg09 & 0xC0) | ((vindpm_val >> 3) & 0x3F);
+  // Clear VINDPM bits [13:5] and set new value, preserve reserved bits
+  word = (word & 0xC01F) | ((vindpm_val & 0x1FF) << 5);
   
   float actual = (vindpm_val * 40.0f) / 1000.0f;
-  ESP_LOGD(TAG, "Setting input voltage limit: %.3fV → %.3fV (0x%03X), REG0x08=0x%02X, REG0x09=0x%02X", 
-           voltage, actual, vindpm_val, reg08, reg09);
+  ESP_LOGD(TAG, "Setting input voltage limit: %.3fV → %.3fV (code=%d), word=0x%04X", 
+           voltage, actual, vindpm_val, word);
   
-  if (!this->write_register_byte_(BQ25628E_REG_VINDPM_CTRL, reg08)) {
-    ESP_LOGE(TAG, "Failed to write REG0x08 (VINDPM)");
-    return false;
-  }
-  
-  if (!this->write_register_byte_(BQ25628E_REG_VINDPM_CTRL + 1, reg09)) {
-    ESP_LOGE(TAG, "Failed to write REG0x09 (VINDPM)");
+  // Write as atomic 16-bit word
+  if (!this->write_register_word_(BQ25628E_REG_VINDPM_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to write VINDPM register");
     return false;
   }
   
@@ -1055,9 +1015,9 @@ bool BQ25628EComponent::set_input_voltage_limit_reg_(float voltage) {
 }
 
 bool BQ25628EComponent::set_minimum_system_voltage_reg_(float voltage) {
-  // REG 0x0E/0x0F - VSYSMIN: Minimum System Voltage
-  // VSYSMIN[1:0] in REG0x0E[7:6], VSYSMIN[5:2] in REG0x0F[3:0]
-  // POR: 3520mV (0x2C), Range: 2560mV-3840mV (0x20-0x30), Step: 80mV
+  // REG 0x0E/0x0F - VSYSMIN: Minimum System Voltage (16-bit register)
+  // 16-bit layout: bits[15:12]=Reserved, bits[11:6]=VSYSMIN, bits[5:0]=Reserved
+  // POR: 3520mV (code 0x2C = 44), Range: 2560mV-3840mV, Step: 80mV
   
   const float MIN = 2.560f;  // 2560mV
   const float MAX = 3.840f;  // 3840mV
@@ -1077,34 +1037,23 @@ bool BQ25628EComponent::set_minimum_system_voltage_reg_(float voltage) {
   if (vsysmin_val < MIN_CODE) vsysmin_val = MIN_CODE;
   if (vsysmin_val > MAX_CODE) vsysmin_val = MAX_CODE;
   
-  // Read both registers to preserve reserved bits
-  uint8_t reg0e, reg0f;
-  if (!this->read_register_byte_(BQ25628E_REG_VSYSMIN_CTRL, reg0e)) {
-    ESP_LOGE(TAG, "Failed to read REG0x0E for VSYSMIN configuration");
-    return false;
-  }
-  if (!this->read_register_byte_(BQ25628E_REG_VSYSMIN_CTRL + 1, reg0f)) {
-    ESP_LOGE(TAG, "Failed to read REG0x0F for VSYSMIN configuration");
+  // Read current word to preserve reserved bits
+  uint16_t word;
+  if (!this->read_register_word_(BQ25628E_REG_VSYSMIN_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to read REG0x0E/0x0F for VSYSMIN configuration");
     return false;
   }
   
-  // Bit-pack: VSYSMIN[1:0] to REG0x0E[7:6], preserve [5:0]
-  reg0e = (reg0e & 0x3F) | ((vsysmin_val & 0x03) << 6);
-  
-  // Bit-pack: VSYSMIN[5:2] to REG0x0F[3:0], preserve [7:4]
-  reg0f = (reg0f & 0xF0) | ((vsysmin_val >> 2) & 0x0F);
+  // Clear VSYSMIN bits [11:6] and set new value, preserve reserved bits
+  word = (word & 0xF03F) | ((static_cast<uint16_t>(vsysmin_val) & 0x3F) << 6);
   
   float actual = (vsysmin_val * 80.0f) / 1000.0f;
-  ESP_LOGD(TAG, "Setting minimum system voltage: %.3fV → %.3fV (0x%02X), REG0x0E=0x%02X, REG0x0F=0x%02X", 
-           voltage, actual, vsysmin_val, reg0e, reg0f);
+  ESP_LOGD(TAG, "Setting minimum system voltage: %.3fV → %.3fV (code=%d), word=0x%04X", 
+           voltage, actual, vsysmin_val, word);
   
-  if (!this->write_register_byte_(BQ25628E_REG_VSYSMIN_CTRL, reg0e)) {
-    ESP_LOGE(TAG, "Failed to write REG0x0E (VSYSMIN)");
-    return false;
-  }
-  
-  if (!this->write_register_byte_(BQ25628E_REG_VSYSMIN_CTRL + 1, reg0f)) {
-    ESP_LOGE(TAG, "Failed to write REG0x0F (VSYSMIN)");
+  // Write as atomic 16-bit word
+  if (!this->write_register_word_(BQ25628E_REG_VSYSMIN_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to write VSYSMIN register");
     return false;
   }
   
@@ -1113,10 +1062,9 @@ bool BQ25628EComponent::set_minimum_system_voltage_reg_(float voltage) {
 }
 
 bool BQ25628EComponent::set_precharge_current_reg_(float current) {
-  // REG 0x10/0x11 - IPRECHG: Pre-charge Current Limit
-  // IPRECHG[4:0] in REG0x10[7:3] (only uses REG0x10)
-  // POR: 30mA (0x03), Range: 10mA-310mA (0x01-0x1F), Step: 10mA
-  // NOTE: When Q4_FULLON=1, minimum is 80mA
+  // REG 0x10/0x11 - IPRECHG: Pre-charge Current Limit (16-bit register)
+  // 16-bit layout: bits[15:8]=Reserved, bits[7:3]=IPRECHG, bits[2:0]=Reserved
+  // POR: 30mA (code 3), Range: 10mA-310mA, Step: 10mA
   
   const float MIN = 0.010f;  // 10mA
   const float MAX = 0.310f;  // 310mA
@@ -1136,22 +1084,23 @@ bool BQ25628EComponent::set_precharge_current_reg_(float current) {
   if (iprechg_val < MIN_CODE) iprechg_val = MIN_CODE;
   if (iprechg_val > MAX_CODE) iprechg_val = MAX_CODE;
   
-  // Read register to preserve reserved bits
-  uint8_t reg10;
-  if (!this->read_register_byte_(BQ25628E_REG_IPRECHG_CTRL, reg10)) {
-    ESP_LOGE(TAG, "Failed to read REG0x10 for IPRECHG configuration");
+  // Read current word to preserve reserved bits
+  uint16_t word;
+  if (!this->read_register_word_(BQ25628E_REG_IPRECHG_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to read REG0x10/0x11 for IPRECHG configuration");
     return false;
   }
   
-  // Bit-pack: IPRECHG[4:0] to REG0x10[7:3], preserve [2:0]
-  reg10 = (reg10 & 0x07) | ((iprechg_val & 0x1F) << 3);
+  // Clear IPRECHG bits [7:3] and set new value, preserve reserved bits
+  word = (word & 0xFF07) | ((static_cast<uint16_t>(iprechg_val) & 0x1F) << 3);
   
   float actual = (iprechg_val * 10.0f) / 1000.0f;
-  ESP_LOGD(TAG, "Setting pre-charge current: %.3fA → %.3fA (0x%02X), REG0x10=0x%02X", 
-           current, actual, iprechg_val, reg10);
+  ESP_LOGD(TAG, "Setting pre-charge current: %.3fA → %.3fA (code=%d), word=0x%04X", 
+           current, actual, iprechg_val, word);
   
-  if (!this->write_register_byte_(BQ25628E_REG_IPRECHG_CTRL, reg10)) {
-    ESP_LOGE(TAG, "Failed to write REG0x10 (IPRECHG)");
+  // Write as atomic 16-bit word
+  if (!this->write_register_word_(BQ25628E_REG_IPRECHG_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to write IPRECHG register");
     return false;
   }
   
@@ -1160,10 +1109,9 @@ bool BQ25628EComponent::set_precharge_current_reg_(float current) {
 }
 
 bool BQ25628EComponent::set_termination_current_reg_(float current) {
-  // REG 0x12/0x13 - ITERM: Termination Current Threshold
-  // ITERM[5:0] in REG0x12[7:2] (only uses REG0x12)
-  // POR: 20mA (0x04), Range: 5mA-310mA (0x01-0x3E), Step: 5mA
-  // NOTE: When Q4_FULLON=1, minimum is 60mA
+  // REG 0x12/0x13 - ITERM: Termination Current Threshold (16-bit register)
+  // 16-bit layout: bits[15:8]=Reserved, bits[7:2]=ITERM, bits[1:0]=Reserved
+  // POR: 20mA (code 4), Range: 5mA-310mA, Step: 5mA
   
   const float MIN = 0.005f;  // 5mA
   const float MAX = 0.310f;  // 310mA
@@ -1183,22 +1131,23 @@ bool BQ25628EComponent::set_termination_current_reg_(float current) {
   if (iterm_val < MIN_CODE) iterm_val = MIN_CODE;
   if (iterm_val > MAX_CODE) iterm_val = MAX_CODE;
   
-  // Read register to preserve reserved bits
-  uint8_t reg12;
-  if (!this->read_register_byte_(BQ25628E_REG_ITERM_CTRL, reg12)) {
-    ESP_LOGE(TAG, "Failed to read REG0x12 for ITERM configuration");
+  // Read current word to preserve reserved bits
+  uint16_t word;
+  if (!this->read_register_word_(BQ25628E_REG_ITERM_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to read REG0x12/0x13 for ITERM configuration");
     return false;
   }
   
-  // Bit-pack: ITERM[5:0] to REG0x12[7:2], preserve [1:0]
-  reg12 = (reg12 & 0x03) | ((iterm_val & 0x3F) << 2);
+  // Clear ITERM bits [7:2] and set new value, preserve reserved bits
+  word = (word & 0xFF03) | ((static_cast<uint16_t>(iterm_val) & 0x3F) << 2);
   
   float actual = (iterm_val * 5.0f) / 1000.0f;
-  ESP_LOGD(TAG, "Setting termination current: %.3fA → %.3fA (0x%02X), REG0x12=0x%02X", 
-           current, actual, iterm_val, reg12);
+  ESP_LOGD(TAG, "Setting termination current: %.3fA → %.3fA (code=%d), word=0x%04X", 
+           current, actual, iterm_val, word);
   
-  if (!this->write_register_byte_(BQ25628E_REG_ITERM_CTRL, reg12)) {
-    ESP_LOGE(TAG, "Failed to write REG0x12 (ITERM)");
+  // Write as atomic 16-bit word
+  if (!this->write_register_word_(BQ25628E_REG_ITERM_CTRL, word)) {
+    ESP_LOGE(TAG, "Failed to write ITERM register");
     return false;
   }
   
