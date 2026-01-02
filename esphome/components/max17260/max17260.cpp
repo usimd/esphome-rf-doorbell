@@ -196,18 +196,17 @@ void MAX17260Component::dump_config() {
     ESP_LOGCONFIG(TAG, "  Device Name: 0x%04X", dev_name);
   }
   
-  // Read 64-bit serial number across 4 registers
-  uint16_t sn1, sn2, sn3, sn4;
+  // Read 32-bit serial number from registers 0xCE-0xCF
+  // Note: Registers 0xD4/0xD5 are MaxPeakPower/SusPeakPower, NOT serial number
+  uint16_t sn1, sn2;
   if (this->read_register_word_(MAX17260_REG_SN1, sn1) &&
-      this->read_register_word_(MAX17260_REG_SN2, sn2) &&
-      this->read_register_word_(MAX17260_REG_SN3, sn3) &&
-      this->read_register_word_(MAX17260_REG_SN4, sn4)) {
-    ESP_LOGCONFIG(TAG, "  Serial Number: %04X%04X%04X%04X", sn4, sn3, sn2, sn1);
+      this->read_register_word_(MAX17260_REG_SN2, sn2)) {
+    ESP_LOGCONFIG(TAG, "  Serial Number: %04X%04X", sn2, sn1);
     
     // Publish to text sensor if configured
     if (this->serial_number_sensor_ != nullptr) {
-      char serial_str[17];
-      snprintf(serial_str, sizeof(serial_str), "%04X%04X%04X%04X", sn4, sn3, sn2, sn1);
+      char serial_str[9];
+      snprintf(serial_str, sizeof(serial_str), "%04X%04X", sn2, sn1);
       this->serial_number_sensor_->publish_state(serial_str);
     }
   }

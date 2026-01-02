@@ -39,11 +39,11 @@ static const uint8_t BQ25628E_REG_ADC_FUNCTION_DISABLE_0 = 0x27;  // ADC Functio
 static const uint8_t BQ25628E_REG_IBUS_ADC = 0x28;  // Input Current ADC (2 bytes)
 static const uint8_t BQ25628E_REG_IBAT_ADC = 0x2A;  // Battery Current ADC (2 bytes)
 static const uint8_t BQ25628E_REG_VBUS_ADC = 0x2C;  // Input Voltage ADC (2 bytes)
+static const uint8_t BQ25628E_REG_VPMID_ADC = 0x2E;  // PMID Voltage ADC (2 bytes) - per datasheet Table 8-37
 static const uint8_t BQ25628E_REG_VBAT_ADC = 0x30;  // Battery Voltage ADC (2 bytes)
 static const uint8_t BQ25628E_REG_VSYS_ADC = 0x32;  // System Voltage ADC (2 bytes)
 static const uint8_t BQ25628E_REG_TS_ADC = 0x34;  // TS Pin ADC (2 bytes)
 static const uint8_t BQ25628E_REG_TDIE_ADC = 0x36;  // Die Temperature ADC (2 bytes)
-static const uint8_t BQ25628E_REG_VPMID_ADC = 0x38;  // PMID Voltage ADC (2 bytes, overlaps with PART_INFO)
 static const uint8_t BQ25628E_REG_PART_INFO = 0x38;  // Part Information
 static const uint8_t BQ25628E_REG_PART_INFORMATION = 0x38;  // Part Information (alias)
 

@@ -118,10 +118,9 @@ static const uint8_t MAX17260_REG_SOFTWAKEUP = 0x60;   // Soft-wakeup command
 
 // Serial number registers (accessible when Config2.AtRateEn=0 && Config2.DPEn=0)
 // These overlap with Dynamic Power and AtRate registers (see UG6597 Table 9)
-static const uint8_t MAX17260_REG_SN1 = 0xCE;  // Mapped to internal SN storage
-static const uint8_t MAX17260_REG_SN2 = 0xCF;  // Mapped to internal SN storage
-static const uint8_t MAX17260_REG_SN3 = 0xD4;  // Actually MaxPeakPower when DPEn=1
-static const uint8_t MAX17260_REG_SN4 = 0xD5;  // Actually SusPeakPower when DPEn=1
+static const uint8_t MAX17260_REG_SN1 = 0xCE;  // Serial number register 1
+static const uint8_t MAX17260_REG_SN2 = 0xCF;  // Serial number register 2
+// Note: 0xD4 and 0xD5 are MaxPeakPower/SusPeakPower registers, NOT serial number
 
 // Status register bit masks
 static const uint16_t STATUS_POR_BIT = 0x0002;  // Power-On Reset bit (bit 1)
