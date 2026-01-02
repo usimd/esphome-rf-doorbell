@@ -3,15 +3,23 @@ esphome:
   friendly_name: Doorbell
   
   on_boot:
-    priority: -100
-    then:
-      - script.execute: determine_wake_source
-      - if:
-          condition:
-            switch.is_on: prevent_sleep_switch
-          then:
-            - deep_sleep.prevent: deep_sleep_control
-      - script.execute: check_battery_status
+    - priority: 600  # Very early - drive CE LOW to enable charging, RF HIGH to enable
+      then:
+        - output.turn_off: charger_ce_pin
+        - output.turn_on: rf_power_pin
+        # Enable GPIO hold for deep sleep - keeps state when ESP sleeps
+        - lambda: |-
+            gpio_hold_en(GPIO_NUM_18);  // CE pin - keep LOW
+            gpio_hold_en(GPIO_NUM_33);  // RF power - keep HIGH
+            gpio_deep_sleep_hold_en();  // Enable hold during deep sleep
+        # Prevent sleep during boot - will be allowed after init completes
+        - deep_sleep.prevent: deep_sleep_control
+    - priority: -100  # Runs last after all components initialized
+      then:
+        - script.execute: determine_wake_source
+        - script.execute: check_battery_status
+        # Start idle timer - allows sleep after system is ready
+        - script.execute: start_idle_sleep_timer
   
 # ESP32-S2 configuration with ESP-IDF framework
 esp32:
@@ -74,22 +82,41 @@ external_components:
     components: [bq25628e, max17260, rfm69]
     refresh: 1s
 
-# Advanced deep sleep configuration with multiple wake sources
-# ESP32 runs from battery, RFM69 always powered from VBUS
-# Wake sources:
+# =============================================================================
+# Deep Sleep Configuration - Power Optimized
+# =============================================================================
+# Power Budget (200mA max from doorbell transformer):
+#   - RFM69 RX mode (always on):     ~16mA  (from VBUS, not battery)
+#   - BQ25628E quiescent:            ~0.5mA
+#   - Battery charging:              160mA (configurable)
+#   - ESP32-S2 active (WiFi):        ~80-100mA
+#   - ESP32-S2 deep sleep:           ~20µA (negligible)
+#   - Constant load:                 ~17mA
+#   - Available for ESP + charging:  ~183mA
+#
+# Strategy:
+#   - Short periodic wakes (2s) every 30s for status sync → 6% duty cycle
+#   - ESP average power: ~6mA → leaves 177mA for charging
+#   - Extended wake (30s) only for external events (doorbell, RF, charger)
+#   - Deep sleep between wakes, all GPIO wake sources active
+#
+# Wake Sources:
 #   1. GPIO6 (DIO0) - RF packet received from RFM69
-#   2. GPIO13 (BELL_SIGNAL) - Wired doorbell button pressed
+#   2. GPIO13 (BELL_SIGNAL) - Wired doorbell button pressed  
 #   3. GPIO17 (BQ_INT) - Battery charger interrupt (fault, charge complete, etc.)
 #   4. GPIO21 (BAT_ALERT) - Battery low alert from fuel gauge
-# Wake behavior:
-#   - Periodic wakeup: 3s run time (sensor update + sync)
-#   - External interrupt: 30s run time (allow user interaction)
+#
+# Wake Behavior:
+#   - Periodic timer: 8s run time (quick sensor update + HA sync)
+#   - External interrupt: 30s run time (allow user interaction via HA)
+# =============================================================================
 deep_sleep:
   id: deep_sleep_control
-  # Wake on doorbell, RF packet, or charger interrupt
+  # Wake on doorbell, RF packet, charger interrupt, or battery alert
   esp32_ext1_wakeup:
     pins:
       - number: GPIO6
+        allow_other_uses: true
       - number: GPIO13
         allow_other_uses: true
       - number: GPIO17
@@ -101,9 +128,9 @@ deep_sleep:
         inverted: true
         allow_other_uses: true
     mode: ANY_LOW
-  # Periodic wake every 30s for battery check and settings sync
-  run_duration: 3s    # Short for periodic wakeups (extended by scripts for external wakes)
-  sleep_duration: 30s  # 30s periodic wake interval
+  # Periodic wake for status updates
+  run_duration: 8s    # Minimal for periodic wakes (sensors + sync)
+  sleep_duration: 30s  # 30s intervals = 2 updates/minute
 
 # I2C Bus configuration
 i2c:
@@ -128,12 +155,33 @@ spi:
     mosi_pin: GPIO10
     miso_pin: GPIO9
 
+# Charger CE pin - must be LOW for charging to be enabled
+# Hardware has 10k pulldown but ESP32 GPIO leakage pulls it up to ~1V
+# Using output platform provides solid ground reference with no power draw
+output:
+  - platform: gpio
+    id: charger_ce_pin
+    pin:
+      number: GPIO18
+      mode:
+        output: true
+
+  - platform: gpio
+    id: rf_power_pin
+    pin:
+      number: GPIO33
+      mode:
+        output: true
+        # Internal pullup keeps LDO ON without GPIO drive current
+        # When ESP is in deep sleep, pullup maintains HIGH state
+
 # GPIO definitions
 binary_sensor:
   # Battery alert from fuel gauge
   - platform: gpio
     name: "Battery Alert"
     id: battery_alert_pin
+    disabled_by_default: true
     pin:
       number: GPIO21
       mode: INPUT_PULLUP
@@ -183,24 +231,28 @@ binary_sensor:
   - platform: template
     name: "Charger Thermal Regulation"
     id: charger_thermal_regulation
+    disabled_by_default: true
     icon: "mdi:thermometer-alert"
     lambda: 'return id(battery_charger).is_in_thermal_regulation();'
 
   - platform: template
     name: "Charger VINDPM Regulation"
     id: charger_vindpm_regulation
+    disabled_by_default: true
     icon: "mdi:flash-alert"
     lambda: 'return id(battery_charger).is_in_vindpm_regulation();'
 
   - platform: template
     name: "Charger IINDPM Regulation"
     id: charger_iindpm_regulation
+    disabled_by_default: true
     icon: "mdi:current-ac"
     lambda: 'return id(battery_charger).is_in_iindpm_regulation();'
 
   - platform: template
     name: "Charger Fault"
     id: charger_fault
+    disabled_by_default: true
     device_class: problem
     lambda: 'return id(battery_charger).has_fault();'
 
@@ -209,6 +261,7 @@ switch:
   - platform: template
     name: "Prevent Sleep for OTA"
     id: prevent_sleep_switch
+    disabled_by_default: true
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
     icon: "mdi:sleep-off"
@@ -217,16 +270,18 @@ switch:
     on_turn_off:
       - deep_sleep.allow: deep_sleep_control
 
-  # Manual RF module power control
-  - platform: gpio
+  # Manual RF module power control (uses output component for clean drive)
+  # RF module is always ON for passive listening - consumes ~16mA in RX mode
+  - platform: template
     name: "RF Power"
     id: rf_power
-    pin:
-      number: GPIO33
-      mode: OUTPUT
-      inverted: false
-    restore_mode: RESTORE_DEFAULT_ON
     icon: "mdi:radio-tower"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    turn_on_action:
+      - output.turn_on: rf_power_pin
+    turn_off_action:
+      - output.turn_off: rf_power_pin
 
   # Control for muting the bell
   - platform: gpio
@@ -241,6 +296,7 @@ switch:
   - platform: template
     name: "Battery Charging Enable"
     id: charging_enable_switch
+    disabled_by_default: true
     icon: "mdi:battery-charging"
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
@@ -253,6 +309,7 @@ switch:
   - platform: template
     name: "Charger HIZ Mode"
     id: hiz_mode_switch
+    disabled_by_default: true
     icon: "mdi:power-plug-off"
     optimistic: true
     restore_mode: RESTORE_DEFAULT_OFF
@@ -271,15 +328,31 @@ switch:
     restore_mode: RESTORE_DEFAULT_OFF
     on_turn_on:
       then:
-        - delay: 3s
+        - delay: 5s
         - switch.turn_off: door_opener
+
+  # RF Remote Pairing Mode - enable to allow new remotes to register
+  # SECURITY: Only enable when actively pairing a new remote!
+  - platform: template
+    name: "RF Pairing Mode"
+    id: rf_pairing_mode
+    icon: "mdi:link-plus"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    on_turn_on:
+      - lambda: 'id(rf_transceiver).set_pairing_mode(true);'
+      # Auto-disable after 60 seconds for security
+      - delay: 60s
+      - switch.turn_off: rf_pairing_mode
+    on_turn_off:
+      - lambda: 'id(rf_transceiver).set_pairing_mode(false);'
 
 # BQ25628E Battery Charger Component
 bq25628e:
   id: battery_charger
   i2c_id: i2c_bus1
   address: 0x6A
-  update_interval: 60s
+  update_interval: 10s
   ts_monitoring_enabled: true
   # Charging current and voltage limits
   charge_current_limit: 0.16  # 160mA for 350mAh battery (0.5C rate)
@@ -299,94 +372,163 @@ bq25628e:
   # Device information (diagnostic)
   part_number:
     name: "Charger Part Number"
+    disabled_by_default: true
   device_revision:
     name: "Charger Revision"
+    disabled_by_default: true
   # Voltage sensors
   bus_voltage:
     name: "Bus Voltage"
+    disabled_by_default: true
   battery_voltage:
     name: "Battery Voltage"
+    disabled_by_default: true
   system_voltage:
     name: "System Voltage"
+    disabled_by_default: true
   # Current sensors
   charge_current:
     name: "Charge Current"
+    disabled_by_default: true
   input_current:
     name: "Input Current"
+    disabled_by_default: true
   # Temperature sensors
   ts_voltage:
     name: "TS Pin Voltage"
+    disabled_by_default: true
   die_temperature:
     name: "Charger Die Temperature"
+    disabled_by_default: true
 
 # MAX17260 Fuel Gauge Component  
 max17260:
   id: fuel_gauge
   i2c_id: i2c_bus2
   address: 0x36
-  update_interval: 30s
+  update_interval: 10s
   voltage:
     name: "Battery Voltage (Fuel Gauge)"
+    disabled_by_default: true
   current:
     name: "Battery Current"
+    disabled_by_default: true
   state_of_charge:
     name: "Battery Percentage"
+    disabled_by_default: true
   remaining_capacity:
     name: "Battery Remaining Capacity"
+    disabled_by_default: true
   full_capacity:
     name: "Battery Full Capacity"
+    disabled_by_default: true
   cycle_count:
     name: "Battery Cycle Count"
+    disabled_by_default: true
   time_to_empty:
     name: "Battery Time to Empty"
+    disabled_by_default: true
   time_to_full:
     name: "Battery Time to Full"
+    disabled_by_default: true
   temperature:
     name: "Battery Temperature"
+    disabled_by_default: true
   device_name:
     name: "Fuel Gauge Device Name"
+    disabled_by_default: true
   serial_number:
     name: "Fuel Gauge Serial Number"
+    disabled_by_default: true
 
 # RFM69 Transceiver Component
-#rfm69:
-#  id: rf_transceiver
-#  spi_id: spi_bus
-#  cs_pin: GPIO11  # RF.CE
-#  reset_pin: GPIO7  # RF.Reset
-#  interrupt_pin: GPIO6  # RF.IO0 (DIO0)
-#  frequency: 433.0  # 433 MHz ISM band
-#  node_id: 1
-#  network_id: 100
-#  encryption_key: "!secret rf_encryption_key"
-#  is_high_power: false  # RFM69W (not RFM69HW)
-#  use_challenge_response: true  # Enable challenge-response for replay protection
-#  challenge_timeout: 30s  # Challenge expires after 30 seconds
-#  on_packet_received:
-#    then:
-#      - script.execute: handle_rf_packet
+# RadioHead-compatible packet format: [LEN][TO][FROM][ID][FLAGS][DATA...]
+# Uses GFSK 250kbps modulation, sync words 0x2D 0xD4
+# Security: AES-128 encryption + challenge-response + device pairing
+rfm69:
+  id: rf_transceiver
+  spi_id: spi_bus
+  cs_pin: GPIO11        # RF.CE (chip select)
+  reset_pin: GPIO7      # RF.Reset
+  interrupt_pin:        # RF.IO0 (DIO0 = PayloadReady)
+    number: GPIO6
+    allow_other_uses: true
+  frequency: 433.0      # 433 MHz ISM band
+  node_id: 1            # This node's address (receiver)
+  network_id: 100       # Sync word 2 (for network isolation)
+  is_high_power: false  # RFM69W (not RFM69HW)
+  tx_power: 13          # TX power in dBm (-18 to +13 for RFM69W)
+  encryption_key: !secret rf_encryption_key  # AES-128 key (16 chars)
+  challenge_timeout: 30s  # Challenge valid for 30 seconds
+  
+  # Called when a device is successfully paired
+  on_device_paired:
+    - lambda: |-
+        ESP_LOGI("rfm69", "New device paired with SN: 0x%08X", serial_number);
+    - homeassistant.service:
+        service: notify.notify
+        data:
+          title: "Doorbell"
+          message: !lambda |-
+            char buf[64];
+            snprintf(buf, sizeof(buf), "New RF remote paired: 0x%08X", serial_number);
+            return std::string(buf);
+  
+  # Called when a door open request is received (authorized or not)
+  on_door_open_request:
+    - lambda: |-
+        ESP_LOGI("rfm69", "Door open request from SN 0x%08X - %s", 
+                 serial_number, authorized ? "AUTHORIZED" : "DENIED");
+    - if:
+        condition:
+          lambda: 'return authorized;'
+        then:
+          - switch.turn_on: door_opener
+          - homeassistant.service:
+              service: notify.notify
+              data:
+                title: "Doorbell"
+                message: "Door opened via RF remote"
+  
+  # Raw packet handler (for debugging and custom protocols)
+  on_packet_received:
+    - lambda: |-
+        ESP_LOGI("rfm69", "Packet from 0x%02X, RSSI: -%d dBm, len: %d", from_address, rssi, data.size());
+        // Check for doorbell ring command (0x10)
+        if (data.size() >= 1 && data[0] == 0x10) {
+          id(wake_from_external_interrupt) = true;
+        }
+    - if:
+        condition:
+          lambda: 'return data.size() >= 1 && data[0] == 0x10;'
+        then:
+          - script.execute: handle_doorbell_press
 
 # Sensors exposed to Home Assistant
 sensor:
   # WiFi Signal Strength
   - platform: wifi_signal
     name: "WiFi Signal"
+    disabled_by_default: true
     update_interval: 60s
   
   # Uptime
   - platform: uptime
     name: "Uptime"
+    disabled_by_default: true
     update_interval: 60s
 
 text_sensor:
   # Device info
   - platform: version
     name: "ESPHome Version"
+    disabled_by_default: true
   
   # Wake source tracking
   - platform: template
     name: "Last Wake Source"
     id: wake_source
+    disabled_by_default: true
     icon: "mdi:sleep-off"
     update_interval: never
   
@@ -394,6 +536,7 @@ text_sensor:
   - platform: template
     name: "Charger Status"
     id: charger_status
+    disabled_by_default: true
     icon: "mdi:battery-charging"
     lambda: |-
       uint8_t status = id(battery_charger).get_charge_status();
@@ -410,6 +553,7 @@ number:
   - platform: template
     name: "Charge Current Limit"
     id: charge_current_setting
+    disabled_by_default: true
     icon: mdi:current-dc
     unit_of_measurement: "A"
     min_value: 0.04
@@ -417,7 +561,7 @@ number:
     step: 0.04
     initial_value: 0.16  # Match bq25628e config
     optimistic: true
-    restore_value: true
+    restore_value: false
     mode: slider
     on_value:
       then:
@@ -426,6 +570,7 @@ number:
   - platform: template
     name: "Charge Voltage Limit"
     id: charge_voltage_setting
+    disabled_by_default: true
     icon: mdi:flash
     unit_of_measurement: "V"
     min_value: 3.5
@@ -433,7 +578,7 @@ number:
     step: 0.01
     initial_value: 4.2  # Match bq25628e config
     optimistic: true
-    restore_value: true
+    restore_value: false
     mode: slider
     on_value:
       then:
@@ -442,6 +587,7 @@ number:
   - platform: template
     name: "Input Current Limit"
     id: input_current_setting
+    disabled_by_default: true
     icon: mdi:current-ac
     unit_of_measurement: "A"
     min_value: 0.1
@@ -449,7 +595,7 @@ number:
     step: 0.1
     initial_value: 0.16  # 160mA - limited by F1 250mA polyfuse
     optimistic: true
-    restore_value: true
+    restore_value: false
     mode: slider
     on_value:
       then:
@@ -458,6 +604,7 @@ number:
   - platform: template
     name: "Input Voltage Limit"
     id: input_voltage_setting
+    disabled_by_default: true
     icon: mdi:flash-triangle
     unit_of_measurement: "V"
     min_value: 3.8
@@ -465,7 +612,7 @@ number:
     step: 0.04
     initial_value: 7.5  # 7.5V VINDPM threshold
     optimistic: true
-    restore_value: true
+    restore_value: false
     mode: slider
     on_value:
       then:
@@ -566,13 +713,36 @@ script:
       - component.update: battery_charger
       - component.update: fuel_gauge
 
+  # Idle sleep timer - allows deep sleep only when system is ready
+  # Called at end of boot after all initialization completes
+  # Respects OTA prevention switch and external interrupt handlers
+  - id: start_idle_sleep_timer
+    mode: restart  # Restart timer if called again (e.g., by handlers)
+    then:
+      # Check if OTA prevention is enabled
+      - if:
+          condition:
+            switch.is_on: prevent_sleep_switch
+          then:
+            - logger.log: "Deep sleep prevented by OTA switch"
+            # Keep preventing - don't call allow
+          else:
+            # Wait for system to stabilize before allowing sleep
+            # This gives time for WiFi, API, and sensors to sync
+            - delay: 15s
+            # Always allow sleep after delay - handlers will re-prevent if needed
+            - logger.log: "System ready - allowing deep sleep"
+            - deep_sleep.allow: deep_sleep_control
+
 # Diagnostics
 button:
   - platform: restart
     name: "Restart"
+    disabled_by_default: true
 
   - platform: template
     name: "Reset Charger Watchdog"
+    disabled_by_default: true
     id: reset_watchdog_button
     icon: "mdi:timer-refresh"
     on_press:
@@ -581,6 +751,74 @@ button:
   - platform: template
     name: "Reset Charger Registers"
     id: reset_charger_button
+    disabled_by_default: true
     icon: "mdi:restore"
     on_press:
       - lambda: 'id(battery_charger).reset_registers();'
+
+  - platform: template
+    name: "Recover from Poor Source Lockout"
+    id: recover_source_button
+    disabled_by_default: true
+    icon: "mdi:power-plug-battery"
+    on_press:
+      then:
+        - logger.log: "Attempting to recover from poor source lockout..."
+        # Toggle HIZ mode to simulate adapter removal/plug-in
+        - lambda: 'id(battery_charger).set_hiz_mode(true);'
+        - delay: 500ms
+        - lambda: 'id(battery_charger).set_hiz_mode(false);'
+        - delay: 100ms
+        # Re-enable charging
+        - lambda: 'id(battery_charger).set_charging_enabled(true);'
+        - logger.log: "Poor source recovery attempted - check charger status"
+        - component.update: battery_charger
+
+  - platform: template
+    name: "Dump Charger Registers"
+    id: dump_registers_button
+    disabled_by_default: true
+    icon: "mdi:file-document-outline"
+    on_press:
+      then:
+        - lambda: |-
+            // Read and log key registers for debugging
+            ESP_LOGI("bq25628e", "=== BQ25628E Register Dump ===");
+            uint8_t reg;
+            // Control registers
+            for (uint8_t addr = 0x02; addr <= 0x19; addr++) {
+              if (id(battery_charger).read_register_byte(addr, &reg)) {
+                ESP_LOGI("bq25628e", "REG 0x%02X = 0x%02X", addr, reg);
+              }
+            }
+            // Status and flag registers
+            for (uint8_t addr = 0x1D; addr <= 0x25; addr++) {
+              if (id(battery_charger).read_register_byte(addr, &reg)) {
+                ESP_LOGI("bq25628e", "REG 0x%02X = 0x%02X", addr, reg);
+              }
+            }
+            ESP_LOGI("bq25628e", "=== End Register Dump ===");
+
+  # RFM69 diagnostic buttons
+  - platform: template
+    name: "Dump RF Registers"
+    id: dump_rf_registers_button
+    disabled_by_default: true
+    icon: "mdi:radio"
+    on_press:
+      - lambda: 'id(rf_transceiver).dump_registers();'
+
+  - platform: template
+    name: "Clear All Paired RF Remotes"
+    id: clear_paired_remotes
+    disabled_by_default: true
+    icon: "mdi:link-off"
+    on_press:
+      - lambda: |-
+          id(rf_transceiver).clear_all_paired_devices();
+          ESP_LOGW("rfm69", "All paired RF remotes have been cleared!");
+      - homeassistant.service:
+          service: notify.notify
+          data:
+            title: "Doorbell"
+            message: "All paired RF remotes have been cleared"

@@ -61,44 +61,92 @@ max17260:
 ---
 
 ### rfm69 - RF Transceiver Driver
-**Communication**: SPI (GPIO8/10/9/15)  
+**Communication**: SPI (GPIO8/10/9/11)  
+**Interrupt**: GPIO6 (DIO0/PayloadReady)  
 **Frequency**: 433 MHz ISM band  
-**Library**: LowPowerLab RFM69 v1.5.3
+**Protocol**: RadioHead-compatible packet format
 
-Secure RF communication driver using the industry-standard LowPowerLab library with custom challenge-response protocol for replay attack protection.
+Custom RF transceiver driver implementing secure communication with hardware AES encryption, challenge-response authentication, and device pairing.
 
 #### Features:
-- AES-128 encryption (via LowPowerLab)
-- Challenge-response authentication
-- Rolling code protection
-- Nonce tracking (replay protection)
-- Device pairing mode
-- Wake-on-interrupt (GPIO7)
+- **AES-128 Hardware Encryption** - Built into RFM69 chip (registers 0x3E-0x4D)
+- **Challenge-Response Protocol** - ESP32 hardware RNG generates 32-bit challenges
+- **Device Pairing** - Serial number-based device registration (up to 10 devices)
+- **One-Time Challenge Use** - Each challenge invalidated after use
+- **Configurable Timeout** - Challenges expire after configurable period (default 30s)
+- **Wake-on-Interrupt** - DIO0 (PayloadReady) triggers ESP32 wake from deep sleep
+- **Temperature Sensor** - Built-in RFM69 temperature reading
+- **Debug Register Dump** - Full register state logging for diagnostics
+
+#### Protocol Commands:
+| Command | Code | Direction | Description |
+|---------|------|-----------|-------------|
+| PING | 0x01 | Remote→Receiver | Request challenge |
+| CHALLENGE | 0x02 | Receiver→Remote | 4-byte random challenge |
+| DOOR_OPEN | 0x03 | Remote→Receiver | Open request with challenge |
+| ACK | 0x04 | Receiver→Remote | Response status |
+| PAIR_REQUEST | 0x05 | Remote→Receiver | Request pairing |
+| PAIR_CONFIRM | 0x06 | Receiver→Remote | Pairing result |
+| DOORBELL_RING | 0x10 | Remote→Receiver | Doorbell button press |
 
 #### Security Layers:
-1. **AES-128 Encryption** - Prevents eavesdropping
-2. **Challenge-Response** - Prevents replay attacks
-3. **Rolling Codes** - Sequential authentication
-4. **Nonce Tracking** - Challenge uniqueness enforcement
+1. **AES-128 Encryption** - All packets encrypted with 16-byte key
+2. **Challenge-Response** - Remote must echo receiver's challenge
+3. **One-Time Use** - Challenge invalidated immediately after successful use
+4. **Timeout Enforcement** - Challenges expire after configurable period
+5. **Device Whitelist** - Only paired serial numbers can open door
 
 #### Usage:
 ```yaml
 rfm69:
   id: rf_transceiver
   spi_id: spi_bus
-  cs_pin: GPIO15
-  reset_pin: GPIO14
-  interrupt_pin: GPIO7
+  cs_pin: GPIO11
+  reset_pin: GPIO7
+  interrupt_pin: GPIO6
   frequency: 433.0  # MHz
   node_id: 1
   network_id: 100
-  encryption_key: !secret rf_encryption_key  # 16 characters
-  is_high_power: false  # RFM69W variant
-  use_challenge_response: true
+  encryption_key: !secret rf_encryption_key  # Exactly 16 characters
+  is_high_power: false  # RFM69W (not RFM69HW)
+  tx_power: 13  # dBm (-18 to +13 for RFM69W)
   challenge_timeout: 30s
+
+  on_device_paired:
+    - logger.log:
+        format: "Device paired: 0x%08X"
+        args: ['serial_number']
+
+  on_door_open_request:
+    - if:
+        condition:
+          lambda: 'return authorized;'
+        then:
+          - switch.turn_on: door_opener
+
   on_packet_received:
-    then:
-      - script.execute: handle_rf_packet
+    - logger.log:
+        format: "Packet from 0x%02X, RSSI -%d dBm"
+        args: ['from_address', 'rssi']
+```
+
+#### Home Assistant Integration:
+```yaml
+# Enable pairing mode (auto-disables after 60s)
+switch:
+  - platform: template
+    name: "RF Pairing Mode"
+    turn_on_action:
+      - lambda: 'id(rf_transceiver).set_pairing_mode(true);'
+    turn_off_action:
+      - lambda: 'id(rf_transceiver).set_pairing_mode(false);'
+
+# Clear all paired devices
+button:
+  - platform: template
+    name: "Clear Paired Remotes"
+    on_press:
+      - lambda: 'id(rf_transceiver).clear_all_paired_devices();'
 ```
 
 ---
@@ -156,7 +204,6 @@ All GPIO assignments verified against KiCAD schematic:
 ### External Libraries (Auto-installed by ESPHome)
 - **Adafruit BusIO** v1.16.1 - I2C/SPI abstraction layer
 - **Adafruit_BQ25628E** v1.0.0 - Battery charger driver
-- **LowPowerLab RFM69** v1.5.3 - RF transceiver driver
 
 ### ESPHome Components Used
 - `esphome/core` - Component base classes
@@ -173,7 +220,7 @@ All GPIO assignments verified against KiCAD schematic:
 This project uses official, well-maintained libraries where available:
 
 ✅ **BQ25628E**: Adafruit_BQ25628E (official Adafruit library)  
-✅ **RFM69**: LowPowerLab RFM69 (industry standard)  
+⚠️ **RFM69**: Custom implementation (direct register access, RadioHead-compatible)  
 ⚠️ **MAX17260**: Custom implementation (no official library exists)
 
 ---
