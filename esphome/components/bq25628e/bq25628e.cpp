@@ -4063,8 +4063,9 @@ bool BQ25628EComponent::read_register_word_(uint8_t reg, uint16_t &value) {
     ESP_LOGW(TAG, "Failed to read 16-bit register 0x%02X", reg);
     return false;
   }
-  // Little-endian: LSB at data[0], MSB at data[1]
+  // Little-endian: data[0] = lower address (LSB), data[1] = higher address (MSB)
   value = (static_cast<uint16_t>(data[1]) << 8) | data[0];
+  ESP_LOGV(TAG, "REG 0x%02X: bytes[0x%02X, 0x%02X] -> 0x%04X", reg, data[0], data[1], value);
   return true;
 }
 
