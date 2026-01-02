@@ -491,6 +491,11 @@ class BQ25628EComponent : public PollingComponent, public i2c::I2CDevice {
   // Flag to indicate component is fully initialized
   bool is_ready_{false};
   
+  // Cached status registers (updated in update() to avoid excessive I2C reads)
+  uint8_t cached_status_0_{0};   // REG 0x1D
+  uint8_t cached_status_1_{0};   // REG 0x1E
+  uint8_t cached_fault_0_{0};    // REG 0x1F
+  
   sensor::Sensor *bus_voltage_sensor_{nullptr};
   sensor::Sensor *battery_voltage_sensor_{nullptr};
   sensor::Sensor *charge_current_sensor_{nullptr};

@@ -467,6 +467,7 @@ bool BQ25628EComponent::read_adc_values_() {
   uint16_t status_0_reg;
   if (this->read_register_word_(BQ25628E_REG_CHG_STATUS_0, status_0_reg)) {
     uint8_t status_0_byte = status_0_reg & 0xFF;
+    this->cached_status_0_ = status_0_byte;  // Cache for template sensors
     bool adc_done_stat = status_0_byte & 0x40;  // Bit 6: ADC conversion complete (one-shot mode)
     bool treg_stat = status_0_byte & 0x20;      // Bit 5: Thermal regulation active
     bool vsys_stat = status_0_byte & 0x10;      // Bit 4: VSYSMIN regulation (BAT < VSYSMIN)
@@ -476,13 +477,16 @@ bool BQ25628EComponent::read_adc_values_() {
     bool wd_stat = status_0_byte & 0x01;        // Bit 0: Watchdog expired
     ESP_LOGD(TAG, "Status0 [0x1D=0x%02X]: ADC_DONE:%d TREG:%d VSYS:%d IINDPM:%d VINDPM:%d SAFETY_TMR:%d WD:%d",
              status_0_byte, adc_done_stat, treg_stat, vsys_stat, iindpm_stat, vindpm_stat, safety_tmr_stat, wd_stat);
-    ESP_LOGW(TAG, "⚠️ THERMAL_REG=%d WATCHDOG=%d SAFETY_TMR=%d - Check for faults!", treg_stat, wd_stat, safety_tmr_stat);
+    if (treg_stat || wd_stat || safety_tmr_stat) {
+      ESP_LOGW(TAG, "⚠️ THERMAL_REG=%d WATCHDOG=%d SAFETY_TMR=%d - Check for faults!", treg_stat, wd_stat, safety_tmr_stat);
+    }
   }
 
   // Read charger status register (REG0x1E) for VBUS and CHG status
   uint16_t status_reg_word;
   if (this->read_register_word_(BQ25628E_REG_CHG_STATUS_1, status_reg_word)) {
     uint8_t status_byte = status_reg_word & 0xFF;
+    this->cached_status_1_ = status_byte;  // Cache for template sensors
     // BQ25628E REG 0x1E bit layout (per datasheet SLUSFA4C):
     // Bits [7:5] = RESERVED
     // Bits [4:3] = CHG_STAT (charge status)
@@ -574,13 +578,15 @@ bool BQ25628EComponent::read_adc_values_() {
   uint16_t fault_reg;
   if (this->read_register_word_(BQ25628E_REG_FAULT_STATUS_0, fault_reg)) {
     uint8_t fault_byte = fault_reg & 0xFF;  // LSB contains fault bits
+    this->cached_fault_0_ = fault_byte;  // Cache for template sensors
     uint8_t ts_stat = fault_byte & 0x07;  // Bits 2:0: TS temperature zone
     
     // Decode TS_STAT zone - always show for debugging
     const char* ts_zone[] = {"NORMAL", "COLD", "HOT", "COOL", "WARM", "PRECOOL", "PREWARM", "BIAS_FAULT"};
     ESP_LOGD(TAG, "Fault Status: 0x%02X, TS_ZONE=%d (%s)", fault_byte, ts_stat, ts_zone[ts_stat]);
     
-    if (fault_byte != 0) {
+    // Only warn if actual faults (not just TS_STAT zone info in bits 2:0)
+    if ((fault_byte & 0xF8) != 0) {
       ESP_LOGW(TAG, "⚠️ Fault detected: VBUS_FAULT:%d BAT_FAULT:%d SYS_FAULT:%d TSHUT:%d",
                (fault_byte & 0x80) ? 1 : 0,  // Bit 7: VBUS fault (OVP or sleep)
                (fault_byte & 0x40) ? 1 : 0,  // Bit 6: Battery fault (OCP or OVP)
@@ -772,54 +778,33 @@ uint8_t BQ25628EComponent::get_charge_status() {
   if (!this->is_ready_) {
     return 0xFF;  // Not ready, return error value
   }
-  
-  uint8_t status_reg;
-  if (!this->read_register_byte_(BQ25628E_REG_CHG_STATUS_1, status_reg)) {
-    return 0xFF;  // Error value
-  }
-  
-  uint8_t chg_stat = ((status_reg & 0xFF) & CHG_STATUS_1_CHG_STAT_MASK) >> 3;
+  // Use cached value from last update() call
+  uint8_t chg_stat = (this->cached_status_1_ & CHG_STATUS_1_CHG_STAT_MASK) >> 3;
   return chg_stat;
 }
 
 bool BQ25628EComponent::is_in_thermal_regulation() {
   if (!this->is_ready_) return false;
-  
-  uint16_t status_reg;
-  if (!this->read_register_word_(BQ25628E_REG_CHG_STATUS_0, status_reg)) {
-    return false;
-  }
-  return ((status_reg & 0xFF) & 0x20) != 0;  // Bit 5: TREG_STAT
+  // Use cached value from last update() call
+  return (this->cached_status_0_ & 0x20) != 0;  // Bit 5: TREG_STAT
 }
 
 bool BQ25628EComponent::is_in_vindpm_regulation() {
   if (!this->is_ready_) return false;
-  
-  uint16_t status_reg;
-  if (!this->read_register_word_(BQ25628E_REG_CHG_STATUS_0, status_reg)) {
-    return false;
-  }
-  return ((status_reg & 0xFF) & 0x04) != 0;  // Bit 2: VINDPM_STAT
+  // Use cached value from last update() call
+  return (this->cached_status_0_ & 0x04) != 0;  // Bit 2: VINDPM_STAT
 }
 
 bool BQ25628EComponent::is_in_iindpm_regulation() {
   if (!this->is_ready_) return false;
-  
-  uint16_t status_reg;
-  if (!this->read_register_word_(BQ25628E_REG_CHG_STATUS_0, status_reg)) {
-    return false;
-  }
-  return ((status_reg & 0xFF) & 0x08) != 0;  // Bit 3: IINDPM_STAT
+  // Use cached value from last update() call
+  return (this->cached_status_0_ & 0x08) != 0;  // Bit 3: IINDPM_STAT
 }
 
 bool BQ25628EComponent::has_fault() {
   if (!this->is_ready_) return false;
-  
-  uint16_t fault_reg;
-  if (!this->read_register_word_(BQ25628E_REG_FAULT_STATUS_0, fault_reg)) {
-    return false;
-  }
-  return (fault_reg & 0xFF) != 0;  // Any non-zero bit indicates a fault
+  // Use cached value from last update() call - mask out TS_STAT bits 2:0 which are normal status
+  return (this->cached_fault_0_ & 0xF8) != 0;  // Bits 7:3 are actual faults
 }
 
 // ============================================================================
