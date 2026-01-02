@@ -25,6 +25,7 @@ jobs:
           pip install esphome
           export DOORBELL_API_ENCRYPTION_KEY=$(openssl rand 32 | base64 -)
           export DOORBELL_OTA_PASSWORD=$(uuidgen)
+          export RF_ENCRYPTION_KEY=$(tr -dc 'A-Za-z0-9_@#$%&*()-+=<>?' </dev/urandom | head -c16)
           envsubst < .github/workflows/secrets-ci.yaml > esphome/secrets.yaml
 
       - name: Patch ESPHome config to use local instead of git for custom components
