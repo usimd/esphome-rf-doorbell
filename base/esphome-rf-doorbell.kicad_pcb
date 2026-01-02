@@ -20928,7 +20928,7 @@
 				)
 			)
 		)
-		(property "Datasheet" "~"
+		(property "Datasheet" "https://www.yageogroup.com/content/datasheet/asset/file/SMD1206_1"
 			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)

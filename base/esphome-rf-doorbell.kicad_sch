@@ -13679,7 +13679,7 @@
 				(hide yes)
 			)
 		)
-		(property "Datasheet" "~"
+		(property "Datasheet" "https://www.yageogroup.com/content/datasheet/asset/file/SMD1206_1"
 			(at 45.72 24.13 0)
 			(effects
 				(font
@@ -19336,7 +19336,7 @@
 				)
 			)
 		)
-		(property "Value" "10k"
+		(property "Value" "2.2k"
 			(at 120.65 61.214 90)
 			(effects
 				(font
