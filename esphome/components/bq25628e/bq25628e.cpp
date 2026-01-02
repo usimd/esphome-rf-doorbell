@@ -397,30 +397,32 @@ bool BQ25628EComponent::read_adc_values_() {
     }
   }
   
-  // Read and publish IBAT (charge current) - datasheet: 4mA per LSB, bits 15:2, signed
+  // Read and publish IBAT (charge current) - datasheet Table 8-35
+  // Bits 15:2 = IBAT_ADC (14-bit, 2's complement), bits 1:0 reserved
+  // Step: 4mA per LSB, positive = charging, negative = discharging
   if (this->charge_current_sensor_ != nullptr) {
     uint16_t raw_ibat;
     if (this->read_register_word_(BQ25628E_REG_IBAT_ADC, raw_ibat)) {
-      // Bits 15:2, 14-bit value, then sign-extend to 16-bit signed
-      uint16_t ibat_adc = (raw_ibat >> 2) & 0x3FFF;
-      int16_t signed_ibat = (int16_t)(ibat_adc << 2) >> 2;  // Sign extend from bit 13
-      float ibat = signed_ibat * IBAT_ADC_STEP;
-      ESP_LOGD(TAG, "IBAT raw: 0x%04X, ADC: %d, signed: %d, value: %.3f A", raw_ibat, ibat_adc, signed_ibat, ibat);
+      // Extract bits 15:2, then sign-extend from 14-bit to 16-bit
+      int16_t ibat_adc = static_cast<int16_t>(raw_ibat) >> 2;  // Arithmetic shift preserves sign
+      float ibat = ibat_adc * IBAT_ADC_STEP;
+      ESP_LOGD(TAG, "IBAT raw: 0x%04X, ADC: %d, value: %.3f A", raw_ibat, ibat_adc, ibat);
       this->charge_current_sensor_->publish_state(ibat);
     } else {
       ESP_LOGW(TAG, "Failed to read IBAT");
     }
   }
   
-  // Read and publish IBUS (input current) - datasheet: 2mA per LSB, bits 15:1, signed
+  // Read and publish IBUS (input current) - datasheet Table 8-34
+  // Bits 15:1 = IBUS_ADC (15-bit, 2's complement), bit 0 reserved
+  // Step: 2mA per LSB, positive = current from VBUS to PMID
   if (this->input_current_sensor_ != nullptr) {
     uint16_t raw_ibus;
     if (this->read_register_word_(BQ25628E_REG_IBUS_ADC, raw_ibus)) {
-      // Bits 15:1, 15-bit value, then sign-extend to 16-bit signed
-      uint16_t ibus_adc = (raw_ibus >> 1) & 0x7FFF;
-      int16_t signed_ibus = (int16_t)(ibus_adc << 1) >> 1;  // Sign extend from bit 14
-      float ibus = signed_ibus * IBUS_ADC_STEP;
-      ESP_LOGD(TAG, "IBUS raw: 0x%04X, ADC: %d, signed: %d, value: %.3f A", raw_ibus, ibus_adc, signed_ibus, ibus);
+      // Extract bits 15:1, then sign-extend from 15-bit to 16-bit
+      int16_t ibus_adc = static_cast<int16_t>(raw_ibus) >> 1;  // Arithmetic shift preserves sign
+      float ibus = ibus_adc * IBUS_ADC_STEP;
+      ESP_LOGD(TAG, "IBUS raw: 0x%04X, ADC: %d, value: %.3f A", raw_ibus, ibus_adc, ibus);
       this->input_current_sensor_->publish_state(ibus);
     } else {
       ESP_LOGW(TAG, "Failed to read IBUS");

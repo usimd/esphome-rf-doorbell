@@ -3,23 +3,36 @@ esphome:
   friendly_name: Doorbell
   
   on_boot:
-    - priority: 600  # Very early - drive CE LOW to enable charging, RF HIGH to enable
+    - priority: 800  # VERY early - before most components initialize
+      then:
+        - lambda: |-
+            // Enable internal pullup on GPIO33 for RF LDO enable
+            // Using pullup instead of active drive for more reliable voltage level
+            gpio_config_t io_conf = {};
+            io_conf.pin_bit_mask = (1ULL << GPIO_NUM_33);
+            io_conf.mode = GPIO_MODE_OUTPUT_OD;  // Open-drain with pullup
+            io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+            io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+            gpio_config(&io_conf);
+            gpio_set_level(GPIO_NUM_33, 1);  // Release to pullup
+            ESP_LOGI("boot", "GPIO33 pullup enabled for RF LDO");
+            
+            // Drive GPIO18 LOW for charger CE (active low enable)
+            io_conf.pin_bit_mask = (1ULL << GPIO_NUM_18);
+            io_conf.mode = GPIO_MODE_OUTPUT;
+            io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+            gpio_config(&io_conf);
+            gpio_set_level(GPIO_NUM_18, 0);
+            ESP_LOGI("boot", "GPIO18 set LOW for charger CE");
+    - priority: 600
       then:
         - output.turn_off: charger_ce_pin
-        - output.turn_on: rf_power_pin
-        # Enable GPIO hold for deep sleep - keeps state when ESP sleeps
+        - switch.turn_on: rf_power  # Use switch to sync HA state
         - lambda: |-
-            gpio_hold_en(GPIO_NUM_18);  // CE pin - keep LOW
-            gpio_hold_en(GPIO_NUM_33);  // RF power - keep HIGH
-            gpio_deep_sleep_hold_en();  // Enable hold during deep sleep
-        # Prevent sleep during boot - will be allowed after init completes
-        - deep_sleep.prevent: deep_sleep_control
+            ESP_LOGI("boot", "GPIO33 level after switch.turn_on: %d", gpio_get_level(GPIO_NUM_33));
     - priority: -100  # Runs last after all components initialized
       then:
-        - script.execute: determine_wake_source
         - script.execute: check_battery_status
-        # Start idle timer - allows sleep after system is ready
-        - script.execute: start_idle_sleep_timer
   
 # ESP32-S2 configuration with ESP-IDF framework
 esp32:
@@ -55,22 +68,13 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  fast_connect: true      # Skip AP scan on reconnect
+  output_power: 15dB      # Reduced from 20dB default - saves power
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
     ssid: "Doorbell Fallback Hotspot"
     password: !secret doorbell_ap_password
-
-# Global variables for wake source tracking
-globals:
-  - id: wake_from_external_interrupt
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-  - id: first_boot_complete
-    type: bool
-    restore_value: yes
-    initial_value: 'false'
 
 # Custom components from GitHub repository
 external_components:
@@ -83,54 +87,27 @@ external_components:
     refresh: 1s
 
 # =============================================================================
-# Deep Sleep Configuration - Power Optimized
+# Power Budget - Always Active Mode
 # =============================================================================
-# Power Budget (200mA max from doorbell transformer):
-#   - RFM69 RX mode (always on):     ~16mA  (from VBUS, not battery)
-#   - BQ25628E quiescent:            ~0.5mA
-#   - Battery charging:              160mA (configurable)
-#   - ESP32-S2 active (WiFi):        ~80-100mA
-#   - ESP32-S2 deep sleep:           ~20µA (negligible)
-#   - Constant load:                 ~17mA
-#   - Available for ESP + charging:  ~183mA
+# Input: 160mA max from doorbell transformer (limited by BQ25628E IINDPM)
 #
-# Strategy:
-#   - Short periodic wakes (2s) every 30s for status sync → 6% duty cycle
-#   - ESP average power: ~6mA → leaves 177mA for charging
-#   - Extended wake (30s) only for external events (doorbell, RF, charger)
-#   - Deep sleep between wakes, all GPIO wake sources active
+# Constant loads (from VBUS):
+#   - ESP32-S2 (WiFi LIGHT mode):  ~25mA  (modem sleep between beacons)
+#   - RFM69W RX mode:              ~16mA  (always listening)
+#   - TLP2391 Schmitt trigger:      ~1.5mA (doorbell detection)
+#   - BQ25628E quiescent:           ~0.5mA
+#   - TPS629206 buck (Iq):          ~0.02mA
+#   - TPS7A2033 LDO (Iq):           ~0.001mA
+#   - MAX17260 fuel gauge:          ~0.05mA
+#   - Misc (dividers, pull-ups):    ~0.3mA
+#   - Total system load:           ~44mA
 #
-# Wake Sources:
-#   1. GPIO6 (DIO0) - RF packet received from RFM69
-#   2. GPIO13 (BELL_SIGNAL) - Wired doorbell button pressed  
-#   3. GPIO17 (BQ_INT) - Battery charger interrupt (fault, charge complete, etc.)
-#   4. GPIO21 (BAT_ALERT) - Battery low alert from fuel gauge
+# Available for battery charging:  160 - 44 = ~116mA average
+# Charge time (350mAh empty→full): ~3 hours
 #
-# Wake Behavior:
-#   - Periodic timer: 8s run time (quick sensor update + HA sync)
-#   - External interrupt: 30s run time (allow user interaction via HA)
+# Note: WiFi TX bursts draw 80-120mA peak, handled by battery buffer.
+#       BQ25628E dynamically adjusts charge current during peaks.
 # =============================================================================
-deep_sleep:
-  id: deep_sleep_control
-  # Wake on doorbell, RF packet, charger interrupt, or battery alert
-  esp32_ext1_wakeup:
-    pins:
-      - number: GPIO6
-        allow_other_uses: true
-      - number: GPIO13
-        allow_other_uses: true
-      - number: GPIO17
-        mode: INPUT_PULLUP
-        inverted: true
-        allow_other_uses: true
-      - number: GPIO21
-        mode: INPUT_PULLUP
-        inverted: true
-        allow_other_uses: true
-    mode: ANY_LOW
-  # Periodic wake for status updates
-  run_duration: 8s    # Minimal for periodic wakes (sensors + sync)
-  sleep_duration: 30s  # 30s intervals = 2 updates/minute
 
 # I2C Bus configuration
 i2c:
@@ -146,7 +123,7 @@ i2c:
     sda: GPIO36
     scl: GPIO35
     scan: true
-    frequency: 1MHz
+    frequency: 400kHz
 
 # SPI Bus for RFM69
 spi:
@@ -186,7 +163,6 @@ binary_sensor:
       number: GPIO21
       mode: INPUT_PULLUP
       inverted: true
-      allow_other_uses: true
     on_press:
       then:
         - homeassistant.service:
@@ -200,14 +176,10 @@ binary_sensor:
     id: bell_signal
     pin:
       number: GPIO13
-      allow_other_uses: true
       mode: INPUT_PULLUP
       inverted: true
     on_press:
       then:
-        - globals.set:
-            id: wake_from_external_interrupt
-            value: 'true'
         - script.execute: handle_doorbell_press
 
   # Battery charger interrupt pin
@@ -219,12 +191,8 @@ binary_sensor:
       number: GPIO17
       mode: INPUT_PULLUP
       inverted: true
-      allow_other_uses: true
     on_press:
       then:
-        - globals.set:
-            id: wake_from_external_interrupt
-            value: 'true'
         - script.execute: handle_charger_interrupt
 
   # Battery charger status sensors
@@ -257,19 +225,6 @@ binary_sensor:
     lambda: 'return id(battery_charger).has_fault();'
 
 switch:
-  # Prevent deep sleep for OTA updates (persists across reboots)
-  - platform: template
-    name: "Prevent Sleep for OTA"
-    id: prevent_sleep_switch
-    disabled_by_default: true
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF
-    icon: "mdi:sleep-off"
-    on_turn_on:
-      - deep_sleep.prevent: deep_sleep_control
-    on_turn_off:
-      - deep_sleep.allow: deep_sleep_control
-
   # Manual RF module power control (uses output component for clean drive)
   # RF module is always ON for passive listening - consumes ~16mA in RX mode
   - platform: template
@@ -450,9 +405,7 @@ rfm69:
   spi_id: spi_bus
   cs_pin: GPIO11        # RF.CE (chip select)
   reset_pin: GPIO7      # RF.Reset
-  interrupt_pin:        # RF.IO0 (DIO0 = PayloadReady)
-    number: GPIO6
-    allow_other_uses: true
+  interrupt_pin: GPIO6  # RF.IO0 (DIO0 = PayloadReady)
   frequency: 433.0      # 433 MHz ISM band
   node_id: 1            # This node's address (receiver)
   network_id: 100       # Sync word 2 (for network isolation)
@@ -494,10 +447,6 @@ rfm69:
   on_packet_received:
     - lambda: |-
         ESP_LOGI("rfm69", "Packet from 0x%02X, RSSI: -%d dBm, len: %d", from_address, rssi, data.size());
-        // Check for doorbell ring command (0x10)
-        if (data.size() >= 1 && data[0] == 0x10) {
-          id(wake_from_external_interrupt) = true;
-        }
     - if:
         condition:
           lambda: 'return data.size() >= 1 && data[0] == 0x10;'
@@ -523,14 +472,6 @@ text_sensor:
   - platform: version
     name: "ESPHome Version"
     disabled_by_default: true
-  
-  # Wake source tracking
-  - platform: template
-    name: "Last Wake Source"
-    id: wake_source
-    disabled_by_default: true
-    icon: "mdi:sleep-off"
-    update_interval: never
   
   # Battery charger status
   - platform: template
@@ -620,34 +561,6 @@ number:
 
 # Scripts for handling events
 script:
-  # Determine wake source and set appropriate duration
-  - id: determine_wake_source
-    then:
-      - lambda: |-
-          auto wakeup_cause = esp_sleep_get_wakeup_cause();
-          
-          if (wakeup_cause == ESP_SLEEP_WAKEUP_EXT1) {
-            uint64_t wakeup_pin_mask = esp_sleep_get_ext1_wakeup_status();
-            
-            if (wakeup_pin_mask & (1ULL << 6)) {
-              id(wake_source).publish_state("RF Packet");
-            } else if (wakeup_pin_mask & (1ULL << 13)) {
-              id(wake_source).publish_state("Doorbell Button");
-            } else if (wakeup_pin_mask & (1ULL << 17)) {
-              id(wake_source).publish_state("Charger Interrupt");
-            } else {
-              id(wake_source).publish_state("External Interrupt");
-            }
-            
-            id(wake_from_external_interrupt) = true;
-          } else if (wakeup_cause == ESP_SLEEP_WAKEUP_TIMER) {
-            id(wake_source).publish_state("Periodic Timer");
-            id(wake_from_external_interrupt) = false;
-          } else {
-            id(wake_source).publish_state("Power On");
-            id(wake_from_external_interrupt) = false;
-          }
-  
   - id: handle_doorbell_press
     then:
       - homeassistant.event:
@@ -660,12 +573,6 @@ script:
           data:
             title: "🔔 Doorbell"
             message: "Someone is at the door!"
-      - deep_sleep.prevent: deep_sleep_control
-      - delay: 30s
-      - globals.set:
-          id: wake_from_external_interrupt
-          value: 'false'
-      - deep_sleep.allow: deep_sleep_control
   
   - id: handle_charger_interrupt
     then:
@@ -688,12 +595,6 @@ script:
             if (fault_flag & 0x20) ESP_LOGE("charger", "VSYS fault");
             if (fault_flag & 0x08) ESP_LOGE("charger", "Thermal shutdown");
           }
-      - deep_sleep.prevent: deep_sleep_control
-      - delay: 10s
-      - globals.set:
-          id: wake_from_external_interrupt
-          value: 'false'
-      - deep_sleep.allow: deep_sleep_control
   
 #  - id: handle_rf_packet
 #    then:
@@ -712,27 +613,6 @@ script:
     then:
       - component.update: battery_charger
       - component.update: fuel_gauge
-
-  # Idle sleep timer - allows deep sleep only when system is ready
-  # Called at end of boot after all initialization completes
-  # Respects OTA prevention switch and external interrupt handlers
-  - id: start_idle_sleep_timer
-    mode: restart  # Restart timer if called again (e.g., by handlers)
-    then:
-      # Check if OTA prevention is enabled
-      - if:
-          condition:
-            switch.is_on: prevent_sleep_switch
-          then:
-            - logger.log: "Deep sleep prevented by OTA switch"
-            # Keep preventing - don't call allow
-          else:
-            # Wait for system to stabilize before allowing sleep
-            # This gives time for WiFi, API, and sensors to sync
-            - delay: 15s
-            # Always allow sleep after delay - handlers will re-prevent if needed
-            - logger.log: "System ready - allowing deep sleep"
-            - deep_sleep.allow: deep_sleep_control
 
 # Diagnostics
 button:
