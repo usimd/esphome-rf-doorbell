@@ -480,6 +480,29 @@ bool BQ25628EComponent::read_adc_values_() {
     if (treg_stat || wd_stat || safety_tmr_stat) {
       ESP_LOGW(TAG, "⚠️ THERMAL_REG=%d WATCHDOG=%d SAFETY_TMR=%d - Check for faults!", treg_stat, wd_stat, safety_tmr_stat);
     }
+    
+    // If VINDPM is active, show diagnostic info
+    if (vindpm_stat) {
+      uint16_t vindpm_word;
+      if (this->read_register_word_(BQ25628E_REG_VINDPM_CTRL, vindpm_word)) {
+        // Decode VINDPM: REG0x08 bits[7:5]=VINDPM[2:0], REG0x09 bits[5:0]=VINDPM[8:3]
+        uint16_t vindpm_code = (vindpm_word >> 5) & 0x1FF;
+        float vindpm_v = vindpm_code * 0.040f;
+        ESP_LOGW(TAG, "⚠️ VINDPM ACTIVE: threshold=%.2fV (code=%d, reg=0x%04X)", vindpm_v, vindpm_code, vindpm_word);
+        
+        // Read VBUS ADC for comparison
+        uint16_t raw_vbus;
+        if (this->read_register_word_(BQ25628E_REG_VBUS_ADC, raw_vbus)) {
+          uint16_t vbus_adc = (raw_vbus >> 2) & 0x1FFF;
+          float vbus_v = vbus_adc * VBUS_ADC_STEP;
+          float headroom = vbus_v - vindpm_v;
+          ESP_LOGW(TAG, "   VBUS=%.2fV, VINDPM=%.2fV, headroom=%.0fmV", vbus_v, vindpm_v, headroom * 1000);
+          if (headroom > 0.5f) {
+            ESP_LOGE(TAG, "   ❌ VINDPM should NOT be active! VBUS >> VINDPM - possible register issue or HW fault");
+          }
+        }
+      }
+    }
   }
 
   // Read charger status register (REG0x1E) for VBUS and CHG status

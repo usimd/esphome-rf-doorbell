@@ -79,10 +79,9 @@ wifi:
 # Custom components from GitHub repository
 external_components:
   - source:
-      type: local #git
-      #url: https://github.com/usimd/esphome-rf-doorbell
-      #ref: main
-      path: components
+      type: git
+      url: https://github.com/usimd/esphome-rf-doorbell
+      ref: main
     components: [bq25628e, max17260, rfm69]
     refresh: 1s
 
@@ -165,7 +164,7 @@ binary_sensor:
       inverted: true
     on_press:
       then:
-        - homeassistant.service:
+        - homeassistant.action:
             service: notify.notify
             data:
               message: "Doorbell battery low!"
@@ -418,7 +417,7 @@ rfm69:
   on_device_paired:
     - lambda: |-
         ESP_LOGI("rfm69", "New device paired with SN: 0x%08X", serial_number);
-    - homeassistant.service:
+    - homeassistant.action:
         service: notify.notify
         data:
           title: "Doorbell"
@@ -437,7 +436,7 @@ rfm69:
           lambda: 'return authorized;'
         then:
           - switch.turn_on: door_opener
-          - homeassistant.service:
+          - homeassistant.action:
               service: notify.notify
               data:
                 title: "Doorbell"
@@ -562,17 +561,20 @@ number:
 # Scripts for handling events
 script:
   - id: handle_doorbell_press
+    mode: single  # Ignore re-triggers while running (debounce)
     then:
       - homeassistant.event:
           event: esphome.doorbell_ring
           data:
             device: esphome-rf-doorbell
             timestamp: !lambda 'return id(esphome_time).now().timestamp;'
-      - homeassistant.service:
+      - homeassistant.action:
           service: notify.notify
           data:
             title: "🔔 Doorbell"
             message: "Someone is at the door!"
+      # Cooldown period - ignore additional presses for 5 seconds
+      - delay: 5s
   
   - id: handle_charger_interrupt
     then:
@@ -697,7 +699,7 @@ button:
       - lambda: |-
           id(rf_transceiver).clear_all_paired_devices();
           ESP_LOGW("rfm69", "All paired RF remotes have been cleared!");
-      - homeassistant.service:
+      - homeassistant.action:
           service: notify.notify
           data:
             title: "Doorbell"
