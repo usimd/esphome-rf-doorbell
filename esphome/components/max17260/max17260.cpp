@@ -196,43 +196,45 @@ void MAX17260Component::dump_config() {
     ESP_LOGCONFIG(TAG, "  Device Name: 0x%04X", dev_name);
   }
   
-  // Read 32-bit serial number from registers 0xCE-0xCF
-  // Note: Registers 0xD4/0xD5 are MaxPeakPower/SusPeakPower, NOT serial number
-  // Per MAX17260 datasheet: Serial number registers are shadowed and require
-  // Config2.AtRateEn=0 and Config2.DPEn=0 to be accessible
+  // Read 32-bit serial number from registers 0xD4-0xD5 (Table 16)
+  // Per MAX17260 datasheet Table 16: Serial number registers are shadowed by
+  // MaxPeakPower/SusPeakPower. Must clear Config2.AtRateEn (bit 10) AND Config2.DPEn (bit 15)
+  // to access the 128-bit serial number (we read first 32 bits: Word0 and Word1)
   
-  // Save Config2 and temporarily disable AtRateEn and DPEn
+  // Save Config2 and temporarily disable both AtRateEn AND DPEn
   uint16_t config2_orig;
   bool config2_saved = this->read_register_word_(MAX17260_REG_CONFIG2, config2_orig);
   if (config2_saved) {
-    // Clear AtRateEn (bit 10) and DPEn (bit 15) to access serial number registers
+    // Clear BOTH AtRateEn (bit 10) AND DPEn (bit 15) - BOTH must be 0
     uint16_t config2_temp = config2_orig & ~0x8400;  // Clear bits 15 and 10
     if (config2_temp != config2_orig) {
       this->write_register_word_(MAX17260_REG_CONFIG2, config2_temp);
-      delay(10);  // Allow shadow RAM to update
-      ESP_LOGD(TAG, "Temporarily disabled Config2 bits for SN read (0x%04X -> 0x%04X)", config2_orig, config2_temp);
+      delay(20);  // Wait for shadow registers to update (increased from 10ms)
+      ESP_LOGD(TAG, "Cleared Config2.DPEn and Config2.AtRateEn for SN read (0x%04X -> 0x%04X)", config2_orig, config2_temp);
     }
   }
   
-  uint16_t sn1, sn2;
-  if (this->read_register_word_(MAX17260_REG_SN1, sn1) &&
-      this->read_register_word_(MAX17260_REG_SN2, sn2)) {
-    ESP_LOGCONFIG(TAG, "  Serial Number: %04X%04X", sn2, sn1);
+  // Now read serial number from 0xD4 (Word0) and 0xD5 (Word1)
+  uint16_t sn_word0, sn_word1;
+  if (this->read_register_word_(MAX17260_REG_SN_WORD0, sn_word0) &&
+      this->read_register_word_(MAX17260_REG_SN_WORD1, sn_word1)) {
+    ESP_LOGCONFIG(TAG, "  Serial Number: %04X%04X", sn_word1, sn_word0);
     
     // Publish to text sensor if configured
     if (this->serial_number_sensor_ != nullptr) {
       char serial_str[9];
-      snprintf(serial_str, sizeof(serial_str), "%04X%04X", sn2, sn1);
+      snprintf(serial_str, sizeof(serial_str), "%04X%04X", sn_word1, sn_word0);
       this->serial_number_sensor_->publish_state(serial_str);
     }
   } else {
-    ESP_LOGW(TAG, "  Failed to read serial number from 0xCE/0xCF");
+    ESP_LOGW(TAG, "  Failed to read serial number from 0xD4/0xD5");
   }
   
-  // Restore original Config2
-  if (config2_saved && (config2_orig & 0x8400) != 0) {
+  // IMPORTANT: Restore original Config2 to re-enable DPEn and AtRateEn
+  if (config2_saved) {
     this->write_register_word_(MAX17260_REG_CONFIG2, config2_orig);
-    ESP_LOGD(TAG, "Restored Config2 to 0x%04X", config2_orig);
+    delay(20);  // Wait for shadow registers to revert
+    ESP_LOGD(TAG, "Restored Config2 to 0x%04X (DPEn and AtRateEn)", config2_orig);
   }
   
   // Publish device name if configured
