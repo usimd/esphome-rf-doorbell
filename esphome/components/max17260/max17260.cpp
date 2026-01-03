@@ -198,6 +198,22 @@ void MAX17260Component::dump_config() {
   
   // Read 32-bit serial number from registers 0xCE-0xCF
   // Note: Registers 0xD4/0xD5 are MaxPeakPower/SusPeakPower, NOT serial number
+  // Per MAX17260 datasheet: Serial number registers are shadowed and require
+  // Config2.AtRateEn=0 and Config2.DPEn=0 to be accessible
+  
+  // Save Config2 and temporarily disable AtRateEn and DPEn
+  uint16_t config2_orig;
+  bool config2_saved = this->read_register_word_(MAX17260_REG_CONFIG2, config2_orig);
+  if (config2_saved) {
+    // Clear AtRateEn (bit 10) and DPEn (bit 15) to access serial number registers
+    uint16_t config2_temp = config2_orig & ~0x8400;  // Clear bits 15 and 10
+    if (config2_temp != config2_orig) {
+      this->write_register_word_(MAX17260_REG_CONFIG2, config2_temp);
+      delay(10);  // Allow shadow RAM to update
+      ESP_LOGD(TAG, "Temporarily disabled Config2 bits for SN read (0x%04X -> 0x%04X)", config2_orig, config2_temp);
+    }
+  }
+  
   uint16_t sn1, sn2;
   if (this->read_register_word_(MAX17260_REG_SN1, sn1) &&
       this->read_register_word_(MAX17260_REG_SN2, sn2)) {
@@ -209,6 +225,14 @@ void MAX17260Component::dump_config() {
       snprintf(serial_str, sizeof(serial_str), "%04X%04X", sn2, sn1);
       this->serial_number_sensor_->publish_state(serial_str);
     }
+  } else {
+    ESP_LOGW(TAG, "  Failed to read serial number from 0xCE/0xCF");
+  }
+  
+  // Restore original Config2
+  if (config2_saved && (config2_orig & 0x8400) != 0) {
+    this->write_register_word_(MAX17260_REG_CONFIG2, config2_orig);
+    ESP_LOGD(TAG, "Restored Config2 to 0x%04X", config2_orig);
   }
   
   // Publish device name if configured

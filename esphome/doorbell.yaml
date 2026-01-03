@@ -33,6 +33,15 @@ esphome:
     - priority: -100  # Runs last after all components initialized
       then:
         - script.execute: check_battery_status
+        - script.execute: handle_boot_wakeup
+        # Put RFM69 into sleep mode to save power (~16mA) until hardware issues resolved
+        - lambda: |-
+            ESP_LOGI("rfm69", "Putting RFM69 into sleep mode to save power");
+            if (id(rf_transceiver).set_sleep()) {
+              ESP_LOGI("rfm69", "RFM69 set to sleep mode (saves ~16mA)");
+            } else {
+              ESP_LOGW("rfm69", "Failed to set RFM69 to sleep mode");
+            }
   
 # ESP32-S2 configuration with ESP-IDF framework
 esp32:
@@ -40,6 +49,37 @@ esp32:
   framework:
     type: esp-idf
     version: recommended
+
+# =============================================================================
+# Deep Sleep Configuration for Low Power Operation
+# =============================================================================
+# Wake sources:
+#   1. GPIO13 (Bell Signal) - Doorbell pressed, stay awake 45s for user interaction
+#   2. GPIO17 (~INT BQ25628E) - Charger interrupt, update sensor and quick sleep
+#   3. GPIO6 (DIO0 RFM69) - RF packet received, process and quick sleep
+#   4. GPIO21 (BAT_ALERT MAX17260) - Battery alert, update sensor and quick sleep
+#   5. Timer (60s) - Periodic sync of HA state (bell mute switch)
+# Power target: ~23mA average (60s sleep + 8s wake)
+# Note: GPIO37 (old BAT_ALERT) cannot wake from deep sleep on ESP32-S2
+# =============================================================================
+deep_sleep:
+  id: deep_sleep_control
+  sleep_duration: 60s  # Configurable via HA number entity
+  # Multiple GPIO wakeup sources using esp32_ext1_wakeup (ESP32-S2)
+  # Wakes when ANY of these pins go HIGH (inverted pins trigger on LOW)
+  esp32_ext1_wakeup:
+    pins:
+      - number: GPIO13  # Bell signal (active HIGH)
+        allow_other_uses: true
+      - number: GPIO17  # BQ25628E ~INT (active LOW, inverted)
+        allow_other_uses: true
+        inverted: true
+      - number: GPIO6   # RFM69 DIO0 (active HIGH)
+        allow_other_uses: true
+      - number: GPIO21  # MAX17260 BAT_ALERT (active LOW, inverted)
+        allow_other_uses: true
+        inverted: true
+    mode: ANY_HIGH
 
 # Enable logging
 logger:
@@ -162,12 +202,16 @@ binary_sensor:
       number: GPIO21
       mode: INPUT_PULLUP
       inverted: true
+      allow_other_uses: true
     on_press:
       then:
         - homeassistant.action:
             service: notify.notify
             data:
               message: "Doorbell battery low!"
+        - logger.log: "Battery alert triggered"
+        - component.update: fuel_gauge
+        - script.execute: handle_interrupt_wakeup
 
   # Doorbell button press detection
   - platform: gpio
@@ -177,9 +221,11 @@ binary_sensor:
       number: GPIO13
       mode: INPUT_PULLUP
       inverted: true
+      allow_other_uses: true
     on_press:
       then:
         - script.execute: handle_doorbell_press
+        - script.execute: extend_wake_time  # Keep awake for user interaction
 
   # Battery charger interrupt pin
   - platform: gpio
@@ -190,9 +236,15 @@ binary_sensor:
       number: GPIO17
       mode: INPUT_PULLUP
       inverted: true
+      allow_other_uses: true
     on_press:
       then:
         - script.execute: handle_charger_interrupt
+        - script.execute: handle_interrupt_wakeup
+
+  # Note: RFM69 DIO0 (GPIO6) is handled by the RFM69 component itself
+  # The component will automatically process packets and can wake from deep sleep
+  # Note: MAX17260 BAT_ALERT (GPIO21) binary_sensor defined above
 
   # Battery charger status sensors
   - platform: template
@@ -244,7 +296,7 @@ switch:
     pin:
       number: GPIO12
       mode: OUTPUT
-    restore_mode: RESTORE_DEFAULT_OFF
+    restore_mode: DISABLED  # Get state from HA, don't restore locally
 
   # Battery charger enable/disable
   - platform: template
@@ -404,7 +456,9 @@ rfm69:
   spi_id: spi_bus
   cs_pin: GPIO11        # RF.CE (chip select)
   reset_pin: GPIO7      # RF.Reset
-  interrupt_pin: GPIO6  # RF.IO0 (DIO0 = PayloadReady)
+  interrupt_pin:        # RF.IO0 (DIO0 = PayloadReady)
+    number: GPIO6
+    allow_other_uses: true
   frequency: 433.0      # 433 MHz ISM band
   node_id: 1            # This node's address (receiver)
   network_id: 100       # Sync word 2 (for network isolation)
@@ -558,6 +612,25 @@ number:
       then:
         - lambda: 'id(battery_charger).set_input_voltage(x);'
 
+  - platform: template
+    name: "Sleep Duration"
+    id: sleep_duration_setting
+    icon: mdi:sleep
+    unit_of_measurement: "s"
+    min_value: 30
+    max_value: 300
+    step: 30
+    initial_value: 60  # Default 60s sleep cycle
+    optimistic: true
+    restore_value: true
+    mode: slider
+    on_value:
+      then:
+        - lambda: |-
+            auto sleep_time = static_cast<uint32_t>(x * 1000);  // Convert to ms
+            id(deep_sleep_control).set_sleep_duration(sleep_time);
+            ESP_LOGI("deep_sleep", "Sleep duration updated to %.0f seconds", x);
+
 # Scripts for handling events
 script:
   - id: handle_doorbell_press
@@ -615,6 +688,72 @@ script:
     then:
       - component.update: battery_charger
       - component.update: fuel_gauge
+
+  # Deep sleep management scripts
+  - id: handle_boot_wakeup
+    then:
+      - logger.log: "Boot/wakeup handler started"
+      - lambda: |-
+          auto wakeup_cause = esp_sleep_get_wakeup_cause();
+          if (wakeup_cause == ESP_SLEEP_WAKEUP_EXT1) {
+            // Check which GPIO triggered the wakeup
+            uint64_t wakeup_pins = esp_sleep_get_ext1_wakeup_status();
+            if (wakeup_pins & (1ULL << 13)) {
+              ESP_LOGI("deep_sleep", "Woke from GPIO13 (doorbell press)");
+              id(extend_wake_time).execute();
+            } else if (wakeup_pins & (1ULL << 17)) {
+              ESP_LOGI("deep_sleep", "Woke from GPIO17 (charger interrupt)");
+              id(handle_interrupt_wakeup).execute();
+            } else if (wakeup_pins & (1ULL << 6)) {
+              ESP_LOGI("deep_sleep", "Woke from GPIO6 (RFM69 packet)");
+              // RFM69 component will process packet automatically
+              // Just update sensors and go back to sleep
+              id(handle_interrupt_wakeup).execute();
+            } else if (wakeup_pins & (1ULL << 21)) {
+              ESP_LOGI("deep_sleep", "Woke from GPIO21 (battery alert)");
+              id(handle_interrupt_wakeup).execute();
+            } else {
+              ESP_LOGI("deep_sleep", "Woke from unknown GPIO: 0x%llx", wakeup_pins);
+              id(quick_sync_and_sleep).execute();
+            }
+          } else if (wakeup_cause == ESP_SLEEP_WAKEUP_TIMER) {
+            ESP_LOGI("deep_sleep", "Woke up from timer (periodic sync)");
+            id(quick_sync_and_sleep).execute();
+          } else {
+            ESP_LOGI("deep_sleep", "Cold boot - allowing OTA window");
+            id(allow_sleep_after_boot).execute();
+          }
+
+  - id: handle_interrupt_wakeup
+    then:
+      - deep_sleep.prevent: deep_sleep_control
+      - logger.log: "Interrupt wakeup - updating sensors"
+      - component.update: battery_charger
+      - component.update: fuel_gauge
+      - delay: 8s  # Same as quick_sync_and_sleep for WiFi + HA update
+      - deep_sleep.allow: deep_sleep_control
+
+  - id: extend_wake_time
+    mode: restart  # Reset timer if called again
+    then:
+      - deep_sleep.prevent: deep_sleep_control
+      - logger.log: "Extended wake time for 45s (user interaction)"
+      - delay: 45s
+      - deep_sleep.allow: deep_sleep_control
+
+  - id: quick_sync_and_sleep
+    then:
+      - deep_sleep.prevent: deep_sleep_control
+      - logger.log: "Quick sync wake (8s for WiFi + HA state)"
+      - delay: 8s  # WiFi needs 2-5s, allow margin for state sync
+      - deep_sleep.allow: deep_sleep_control
+
+  - id: allow_sleep_after_boot
+    then:
+      - deep_sleep.prevent: deep_sleep_control
+      - logger.log: "Cold boot - preventing sleep for 120s (OTA window)"
+      - delay: 120s  # 2 minutes for OTA after cold boot/restart
+      - deep_sleep.allow: deep_sleep_control
 
 # Diagnostics
 button:
