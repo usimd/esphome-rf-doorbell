@@ -214,7 +214,6 @@ void MAX17260Component::dump_config() {
     uint16_t config2_temp = config2_orig & ~0x8400;  // Clear bits 15 and 10
     if (config2_temp != config2_orig) {
       this->write_register_word_(MAX17260_REG_CONFIG2, config2_temp);
-      delay(20);  // Wait for shadow registers to update (increased from 10ms)
       
       // Verify the write worked
       uint16_t config2_verify;
@@ -224,6 +223,23 @@ void MAX17260Component::dump_config() {
                (config2_temp & 0x8000) ? 1 : 0,
                (config2_temp & 0x0400) ? 1 : 0,
                config2_verify);
+      
+      // Per app note: Poll Status2.SNReady (bit 7) until set
+      bool sn_ready = false;
+      for (int i = 0; i < 50; i++) {  // Poll for up to 500ms
+        uint16_t status2;
+        if (this->read_register_word_(MAX17260_REG_STATUS2, status2)) {
+          if (status2 & 0x0080) {  // Bit 7 = SNReady
+            sn_ready = true;
+            ESP_LOGD(TAG, "SN Read: Status2.SNReady set after %dms (Status2=0x%04X)", i * 10, status2);
+            break;
+          }
+        }
+        delay(10);
+      }
+      if (!sn_ready) {
+        ESP_LOGW(TAG, "SN Read: Timeout waiting for Status2.SNReady");
+      }
     }
   }
   
