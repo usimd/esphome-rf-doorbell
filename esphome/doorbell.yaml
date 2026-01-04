@@ -27,21 +27,18 @@ esphome:
     - priority: 600
       then:
         - output.turn_off: charger_ce_pin
-        - switch.turn_on: rf_power  # Use switch to sync HA state
+        - output.turn_off: rf_power_pin  # Disable RFM69 LDO to save power (~16mA)
         - lambda: |-
-            ESP_LOGI("boot", "GPIO33 level after switch.turn_on: %d", gpio_get_level(GPIO_NUM_33));
+            ESP_LOGI("boot", "GPIO33 set LOW - RFM69 LDO disabled");
     - priority: -100  # Runs last after all components initialized
       then:
+        - lambda: 'ESP_LOGI("boot", "Priority -100 boot handler starting");'
+        # Disable charging during wake - weak intercom supply can't handle wake current + charge current
+        - lambda: |-
+            ESP_LOGI("boot", "Disabling charging during wake period (prevents VBUS collapse)");
+            id(battery_charger).set_charging_enabled(false);
         - script.execute: check_battery_status
         - script.execute: handle_boot_wakeup
-        # Put RFM69 into sleep mode to save power (~16mA) until hardware issues resolved
-        - lambda: |-
-            ESP_LOGI("rfm69", "Putting RFM69 into sleep mode to save power");
-            if (id(rf_transceiver).set_sleep()) {
-              ESP_LOGI("rfm69", "RFM69 set to sleep mode (saves ~16mA)");
-            } else {
-              ESP_LOGW("rfm69", "Failed to set RFM69 to sleep mode");
-            }
   
 # ESP32-S2 configuration with ESP-IDF framework
 esp32:
@@ -64,7 +61,8 @@ esp32:
 # =============================================================================
 deep_sleep:
   id: deep_sleep_control
-  sleep_duration: 60s  # Configurable via HA number entity
+  run_duration: 120s  # Stay awake for 120s after boot (OTA window), scripts can extend
+  sleep_duration: 60s  # Sleep for 60s between wakeups (configurable via HA)
   # Multiple GPIO wakeup sources using esp32_ext1_wakeup (ESP32-S2)
   # Wakes when ANY of these pins go HIGH (inverted pins trigger on LOW)
   esp32_ext1_wakeup:
@@ -360,20 +358,20 @@ bq25628e:
   address: 0x6A
   update_interval: 10s
   ts_monitoring_enabled: true
-  # Charging current and voltage limits
-  charge_current_limit: 0.16  # 160mA for 350mAh battery (0.5C rate)
+  # Charging current and voltage limits - ABSOLUTE MINIMUM for weak intercom supply
+  charge_current_limit: 0.04  # 40mA - minimum possible (only during sleep)
   charge_voltage_limit: 4.2  # Maximum safe voltage for Li-ion
-  input_current_limit: 0.16  # 160mA - limited by F1 250mA polyfuse
-  input_voltage_limit: 7.5  # 7.5V VINDPM
+  input_current_limit: 0.1  # 100mA - absolute minimum allowed by IC
+  input_voltage_limit: 3.9  # 3.9V VINDPM - minimum to disable VINDPM regulation
   # System and pre-charge configuration
   minimum_system_voltage: 3.52
-  precharge_current: 0.03
-  termination_current: 0.02
+  precharge_current: 0.01  # 10mA - minimum possible
+  termination_current: 0.005  # 5mA - minimum possible
   # Charge termination and protection
   termination_enabled: true
   vindpm_battery_tracking: false  # Disable - use fixed threshold
   recharge_threshold: 0.1
-  watchdog_timeout: 1
+  watchdog_timeout: 0  # Disable watchdog - prevents reset to POR values during deep sleep
   thermal_regulation_threshold: 120
   # Device information (diagnostic)
   part_number:
@@ -688,6 +686,17 @@ script:
     then:
       - component.update: battery_charger
       - component.update: fuel_gauge
+      # Read charging event flags from sleep period
+      - lambda: |-
+          uint8_t flag0, flag1;
+          if (id(battery_charger).read_register_byte(0x20, &flag0) && flag0 != 0) {
+            ESP_LOGI("sleep_charging", "Events during sleep - FLAG0=0x%02X: VINDPM=%d IINDPM=%d VSYS=%d",
+              flag0, (flag0 >> 2) & 1, (flag0 >> 3) & 1, (flag0 >> 4) & 1);
+          }
+          if (id(battery_charger).read_register_byte(0x21, &flag1) && flag1 != 0) {
+            ESP_LOGI("sleep_charging", "Charge state changed - FLAG1=0x%02X: CHG_STAT=%d",
+              flag1, (flag1 >> 3) & 0x07);
+          }
 
   # Deep sleep management scripts
   - id: handle_boot_wakeup
@@ -706,8 +715,6 @@ script:
               id(handle_interrupt_wakeup).execute();
             } else if (wakeup_pins & (1ULL << 6)) {
               ESP_LOGI("deep_sleep", "Woke from GPIO6 (RFM69 packet)");
-              // RFM69 component will process packet automatically
-              // Just update sensors and go back to sleep
               id(handle_interrupt_wakeup).execute();
             } else if (wakeup_pins & (1ULL << 21)) {
               ESP_LOGI("deep_sleep", "Woke from GPIO21 (battery alert)");
@@ -720,8 +727,8 @@ script:
             ESP_LOGI("deep_sleep", "Woke up from timer (periodic sync)");
             id(quick_sync_and_sleep).execute();
           } else {
-            ESP_LOGI("deep_sleep", "Cold boot - allowing OTA window");
-            id(allow_sleep_after_boot).execute();
+            // Cold boot - run_duration (120s) handles OTA window automatically
+            ESP_LOGI("deep_sleep", "Cold boot - run_duration will allow sleep after 120s");
           }
 
   - id: handle_interrupt_wakeup
@@ -731,6 +738,10 @@ script:
       - component.update: battery_charger
       - component.update: fuel_gauge
       - delay: 8s  # Same as quick_sync_and_sleep for WiFi + HA update
+      # Enable charging before sleep (only charges during low-current sleep mode)
+      - lambda: |-
+          ESP_LOGI("deep_sleep", "Enabling charging before sleep (low current period)");
+          id(battery_charger).set_charging_enabled(true);
       - deep_sleep.allow: deep_sleep_control
 
   - id: extend_wake_time
@@ -739,6 +750,10 @@ script:
       - deep_sleep.prevent: deep_sleep_control
       - logger.log: "Extended wake time for 45s (user interaction)"
       - delay: 45s
+      # Enable charging before sleep (only charges during low-current sleep mode)
+      - lambda: |-
+          ESP_LOGI("deep_sleep", "Enabling charging before sleep (low current period)");
+          id(battery_charger).set_charging_enabled(true);
       - deep_sleep.allow: deep_sleep_control
 
   - id: quick_sync_and_sleep
@@ -746,13 +761,10 @@ script:
       - deep_sleep.prevent: deep_sleep_control
       - logger.log: "Quick sync wake (8s for WiFi + HA state)"
       - delay: 8s  # WiFi needs 2-5s, allow margin for state sync
-      - deep_sleep.allow: deep_sleep_control
-
-  - id: allow_sleep_after_boot
-    then:
-      - deep_sleep.prevent: deep_sleep_control
-      - logger.log: "Cold boot - preventing sleep for 120s (OTA window)"
-      - delay: 120s  # 2 minutes for OTA after cold boot/restart
+      # Enable charging before sleep (only charges during low-current sleep mode)
+      - lambda: |-
+          ESP_LOGI("deep_sleep", "Enabling charging before sleep (low current period)");
+          id(battery_charger).set_charging_enabled(true);
       - deep_sleep.allow: deep_sleep_control
 
 # Diagnostics
@@ -794,6 +806,37 @@ button:
         - lambda: 'id(battery_charger).set_charging_enabled(true);'
         - logger.log: "Poor source recovery attempted - check charger status"
         - component.update: battery_charger
+
+  - platform: template
+    name: "Read Sleep Charging Flags"
+    id: read_sleep_flags_button
+    disabled_by_default: true
+    icon: "mdi:sleep"
+    on_press:
+      then:
+        - lambda: |-
+            // Read FLAG registers to see what happened during sleep
+            uint8_t flag0, flag1, flag2;
+            if (id(battery_charger).read_register_byte(0x20, &flag0)) {
+              ESP_LOGI("sleep_flags", "CHARGER_FLAG_0=0x%02X: VINDPM=%d IINDPM=%d VSYS=%d TREG=%d ADC_DONE=%d",
+                flag0, 
+                (flag0 >> 2) & 1,  // VINDPM_FLAG
+                (flag0 >> 3) & 1,  // IINDPM_FLAG  
+                (flag0 >> 4) & 1,  // VSYS_FLAG
+                (flag0 >> 5) & 1,  // TREG_FLAG
+                (flag0 >> 6) & 1); // ADC_DONE
+            }
+            if (id(battery_charger).read_register_byte(0x21, &flag1)) {
+              ESP_LOGI("sleep_flags", "CHARGER_FLAG_1=0x%02X: CHG_STAT=%d VBUS_STAT=%d", 
+                flag1,
+                (flag1 >> 3) & 0x07,  // CHG_STAT change
+                (flag1 >> 6) & 0x07); // VBUS_STAT change
+            }
+            if (id(battery_charger).read_register_byte(0x22, &flag2)) {
+              ESP_LOGI("sleep_flags", "FAULT_FLAG_0=0x%02X: Faults occurred=%s",
+                flag2, flag2 ? "YES" : "NO");
+            }
+            ESP_LOGI("sleep_flags", "Flags cleared by reading - next read shows events since now");
 
   - platform: template
     name: "Dump Charger Registers"

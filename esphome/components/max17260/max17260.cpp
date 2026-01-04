@@ -204,13 +204,26 @@ void MAX17260Component::dump_config() {
   // Save Config2 and temporarily disable both AtRateEn AND DPEn
   uint16_t config2_orig;
   bool config2_saved = this->read_register_word_(MAX17260_REG_CONFIG2, config2_orig);
+  ESP_LOGD(TAG, "SN Read: Config2 original = 0x%04X (DPEn=%d, AtRateEn=%d)", 
+           config2_orig, 
+           (config2_orig & 0x8000) ? 1 : 0,  // bit 15
+           (config2_orig & 0x0400) ? 1 : 0); // bit 10
+  
   if (config2_saved) {
     // Clear BOTH AtRateEn (bit 10) AND DPEn (bit 15) - BOTH must be 0
     uint16_t config2_temp = config2_orig & ~0x8400;  // Clear bits 15 and 10
     if (config2_temp != config2_orig) {
       this->write_register_word_(MAX17260_REG_CONFIG2, config2_temp);
       delay(20);  // Wait for shadow registers to update (increased from 10ms)
-      ESP_LOGD(TAG, "Cleared Config2.DPEn and Config2.AtRateEn for SN read (0x%04X -> 0x%04X)", config2_orig, config2_temp);
+      
+      // Verify the write worked
+      uint16_t config2_verify;
+      this->read_register_word_(MAX17260_REG_CONFIG2, config2_verify);
+      ESP_LOGD(TAG, "SN Read: Config2 modified = 0x%04X (DPEn=%d, AtRateEn=%d), verify = 0x%04X", 
+               config2_temp,
+               (config2_temp & 0x8000) ? 1 : 0,
+               (config2_temp & 0x0400) ? 1 : 0,
+               config2_verify);
     }
   }
   
@@ -218,7 +231,8 @@ void MAX17260Component::dump_config() {
   uint16_t sn_word0, sn_word1;
   if (this->read_register_word_(MAX17260_REG_SN_WORD0, sn_word0) &&
       this->read_register_word_(MAX17260_REG_SN_WORD1, sn_word1)) {
-    ESP_LOGCONFIG(TAG, "  Serial Number: %04X%04X", sn_word1, sn_word0);
+    ESP_LOGCONFIG(TAG, "  Serial Number: %04X%04X (raw: Word1=0x%04X, Word0=0x%04X)", 
+                  sn_word1, sn_word0, sn_word1, sn_word0);
     
     // Publish to text sensor if configured
     if (this->serial_number_sensor_ != nullptr) {
@@ -234,7 +248,11 @@ void MAX17260Component::dump_config() {
   if (config2_saved) {
     this->write_register_word_(MAX17260_REG_CONFIG2, config2_orig);
     delay(20);  // Wait for shadow registers to revert
-    ESP_LOGD(TAG, "Restored Config2 to 0x%04X (DPEn and AtRateEn)", config2_orig);
+    
+    // Verify restoration
+    uint16_t config2_restored;
+    this->read_register_word_(MAX17260_REG_CONFIG2, config2_restored);
+    ESP_LOGD(TAG, "SN Read: Config2 restored to 0x%04X, verify = 0x%04X", config2_orig, config2_restored);
   }
   
   // Publish device name if configured
