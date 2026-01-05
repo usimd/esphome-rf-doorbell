@@ -277,9 +277,9 @@ bool BQ25628EComponent::configure_charger_() {
   }
   
   // REG 0x26: ADC_CTRL - Enable continuous ADC with averaging
-  // Bit 7: ADC_EN, Bit 6: ADC_RATE (continuous), Bits 5:4: ADC_SAMPLE (10-bit), Bit 3: ADC_AVG
+  // Bit 7: ADC_EN, Bit 6: ADC_RATE (continuous), Bits 5:4: ADC_SAMPLE (12-bit), Bit 3: ADC_AVG
   {
-    uint8_t adc_ctrl = 0x80 | 0x40 | (0x02 << 4) | 0x08;  // 0xE8
+    uint8_t adc_ctrl = 0x80 | 0x40 | (0x00 << 4) | 0x08;  // 0xC8 - 12-bit for best accuracy
     if (!this->write_register_byte_(BQ25628E_REG_ADC_CTRL, adc_ctrl)) {
       ESP_LOGE(TAG, "Failed to write ADC_CTRL");
       return false;
@@ -487,7 +487,7 @@ bool BQ25628EComponent::read_adc_values_() {
       if (this->read_register_word_(BQ25628E_REG_VINDPM_CTRL, vindpm_word)) {
         // Decode VINDPM: REG0x08 bits[7:5]=VINDPM[2:0], REG0x09 bits[5:0]=VINDPM[8:3]
         uint16_t vindpm_code = (vindpm_word >> 5) & 0x1FF;
-        float vindpm_v = vindpm_code * 0.040f;
+        float vindpm_v = 3.8f + ((vindpm_code - 95) * 0.040f);  // 3800mV + (code-95)×40mV per datasheet
         ESP_LOGW(TAG, "⚠️ VINDPM ACTIVE: threshold=%.2fV (code=%d, reg=0x%04X)", vindpm_v, vindpm_code, vindpm_word);
         
         // Read VBUS ADC for comparison
@@ -984,17 +984,19 @@ bool BQ25628EComponent::set_input_voltage_limit_reg_(float voltage) {
   
   const float MIN = 3.800f;  // 3800mV
   const float MAX = 16.800f; // 16800mV
+  const float BASELINE = 3.800f; // 3800mV at code 95
   const float STEP = 0.040f; // 40mV
-  const uint16_t MIN_CODE = 0x5F;  // 95
-  const uint16_t MAX_CODE = 0x1A4; // 420
+  const uint16_t CODE_OFFSET = 95;  // 0x5F - code 95 = 3800mV
+  const uint16_t MIN_CODE = 0x5F;   // 95 = 3800mV
+  const uint16_t MAX_CODE = 0x1A4;  // 420 = 16800mV
   
   if (voltage < MIN || voltage > MAX) {
     ESP_LOGE(TAG, "Input voltage limit %.3fV out of range [%.3fV - %.3fV]", voltage, MIN, MAX);
     return false;
   }
   
-  // Encoding: code = voltage_mV / 40
-  uint16_t vindpm_val = static_cast<uint16_t>((voltage * 1000.0f) / 40.0f + 0.5f);
+  // Encoding: code = (voltage_mV - 3800) / 40 + 95 per datasheet
+  uint16_t vindpm_val = static_cast<uint16_t>(((voltage - BASELINE) * 1000.0f) / 40.0f + CODE_OFFSET + 0.5f);
   
   // Clamp to valid range
   if (vindpm_val < MIN_CODE) vindpm_val = MIN_CODE;
@@ -1010,7 +1012,7 @@ bool BQ25628EComponent::set_input_voltage_limit_reg_(float voltage) {
   // Clear VINDPM bits [13:5] and set new value, preserve reserved bits
   word = (word & 0xC01F) | ((vindpm_val & 0x1FF) << 5);
   
-  float actual = (vindpm_val * 40.0f) / 1000.0f;
+  float actual = 3.8f + (((vindpm_val - 95) * 40.0f) / 1000.0f);  // 3800mV + (code-95)×40mV
   ESP_LOGD(TAG, "Setting input voltage limit: %.3fV → %.3fV (code=%d), word=0x%04X", 
            voltage, actual, vindpm_val, word);
   
