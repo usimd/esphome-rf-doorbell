@@ -9324,7 +9324,7 @@
 	)
 	(wire
 		(pts
-			(xy 73.66 132.08) (xy 73.66 134.62)
+			(xy 69.85 132.08) (xy 69.85 134.62)
 		)
 		(stroke
 			(width 0)
@@ -9414,7 +9414,7 @@
 	)
 	(wire
 		(pts
-			(xy 83.82 133.35) (xy 83.82 135.89)
+			(xy 80.01 133.35) (xy 80.01 135.89)
 		)
 		(stroke
 			(width 0)
@@ -10371,6 +10371,16 @@
 			(type default)
 		)
 		(uuid "83e76a54-263d-4443-91b7-96c480b88057")
+	)
+	(wire
+		(pts
+			(xy 91.44 133.35) (xy 91.44 135.89)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "84597c10-4e17-4ca3-9d9c-d5614f2fa72c")
 	)
 	(wire
 		(pts
@@ -11543,7 +11553,7 @@
 		(uuid "43d5e3f2-edbf-427f-a99a-d5126b44bbd1")
 	)
 	(label "BELL_OFF"
-		(at 66.04 133.35 270)
+		(at 62.23 133.35 270)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -11663,7 +11673,7 @@
 		(uuid "6aa0d3a0-ceb9-4f4c-8c0d-48a8c156b4b6")
 	)
 	(label "BELL_SIGNAL"
-		(at 50.8 133.35 270)
+		(at 46.99 133.35 270)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -11673,7 +11683,7 @@
 		(uuid "71b41a7c-2f79-4976-b273-a22532533649")
 	)
 	(label "OPEN_BUZZER"
-		(at 58.42 133.35 270)
+		(at 54.61 133.35 270)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -12364,7 +12374,7 @@
 	)
 	(symbol
 		(lib_id "power:-BATT")
-		(at 83.82 135.89 180)
+		(at 80.01 135.89 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -12372,7 +12382,7 @@
 		(dnp no)
 		(uuid "0ce52efb-6f75-4870-ad4b-0a89776ca938")
 		(property "Reference" "#PWR033"
-			(at 83.82 132.08 0)
+			(at 80.01 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12381,7 +12391,7 @@
 			)
 		)
 		(property "Value" "-BATT"
-			(at 83.566 139.954 0)
+			(at 79.756 139.954 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12389,7 +12399,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 83.82 135.89 0)
+			(at 80.01 135.89 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12398,7 +12408,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 83.82 135.89 0)
+			(at 80.01 135.89 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12407,7 +12417,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"-BATT\""
-			(at 83.82 135.89 0)
+			(at 80.01 135.89 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12723,7 +12733,7 @@
 	)
 	(symbol
 		(lib_id "Connector:TestPoint")
-		(at 58.42 133.35 0)
+		(at 54.61 133.35 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom no)
@@ -12731,7 +12741,7 @@
 		(dnp no)
 		(uuid "19974348-c795-4ba6-8982-697e9fb168b8")
 		(property "Reference" "TP5"
-			(at 56.896 128.016 0)
+			(at 53.086 128.016 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12740,7 +12750,7 @@
 			)
 		)
 		(property "Value" "TestPoint"
-			(at 60.96 131.3179 0)
+			(at 57.15 131.3179 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12750,7 +12760,7 @@
 			)
 		)
 		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
-			(at 63.5 133.35 0)
+			(at 59.69 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12759,7 +12769,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 63.5 133.35 0)
+			(at 59.69 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12768,7 +12778,7 @@
 			)
 		)
 		(property "Description" "test point"
-			(at 58.42 133.35 0)
+			(at 54.61 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12777,7 +12787,7 @@
 			)
 		)
 		(property "LCSC Part #" ""
-			(at 58.42 133.35 0)
+			(at 54.61 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12786,7 +12796,7 @@
 			)
 		)
 		(property "Sim.Pin" ""
-			(at 58.42 133.35 0)
+			(at 54.61 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12808,7 +12818,7 @@
 	)
 	(symbol
 		(lib_id "Connector:TestPoint")
-		(at 50.8 133.35 0)
+		(at 46.99 133.35 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom no)
@@ -12816,7 +12826,7 @@
 		(dnp no)
 		(uuid "1cb18153-2534-4d1d-aad5-8f992b8775af")
 		(property "Reference" "TP4"
-			(at 49.276 128.016 0)
+			(at 45.466 128.016 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12825,7 +12835,7 @@
 			)
 		)
 		(property "Value" "TestPoint"
-			(at 53.34 131.3179 0)
+			(at 49.53 131.3179 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12835,7 +12845,7 @@
 			)
 		)
 		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
-			(at 55.88 133.35 0)
+			(at 52.07 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12844,7 +12854,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 55.88 133.35 0)
+			(at 52.07 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12853,7 +12863,7 @@
 			)
 		)
 		(property "Description" "test point"
-			(at 50.8 133.35 0)
+			(at 46.99 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12862,7 +12872,7 @@
 			)
 		)
 		(property "LCSC Part #" ""
-			(at 50.8 133.35 0)
+			(at 46.99 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12871,7 +12881,7 @@
 			)
 		)
 		(property "Sim.Pin" ""
-			(at 50.8 133.35 0)
+			(at 46.99 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13987,16 +13997,15 @@
 	)
 	(symbol
 		(lib_id "power:VBUS")
-		(at 26.67 132.08 0)
+		(at 22.86 132.08 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "432cb897-8997-4549-80ea-cff953170ce0")
 		(property "Reference" "#PWR029"
-			(at 26.67 135.89 0)
+			(at 22.86 135.89 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14005,7 +14014,7 @@
 			)
 		)
 		(property "Value" "VBUS"
-			(at 26.67 127 0)
+			(at 22.86 127.762 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14013,7 +14022,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 26.67 132.08 0)
+			(at 22.86 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14022,7 +14031,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 26.67 132.08 0)
+			(at 22.86 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14031,7 +14040,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"VBUS\""
-			(at 26.67 132.08 0)
+			(at 22.86 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14046,6 +14055,71 @@
 			(project "esphome-rf-doorbell"
 				(path "/b07d5988-2788-4b3b-a250-602b43e32b02"
 					(reference "#PWR029")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 91.44 135.89 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "43af252c-236b-486e-a42f-0b67b30585bd")
+		(property "Reference" "#PWR044"
+			(at 91.44 142.24 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 91.44 139.446 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 91.44 135.89 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 91.44 135.89 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 91.44 135.89 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "bd9a48f1-c8cb-4c6c-b9c9-c630435aa924")
+		)
+		(instances
+			(project "esphome-rf-doorbell"
+				(path "/b07d5988-2788-4b3b-a250-602b43e32b02"
+					(reference "#PWR044")
 					(unit 1)
 				)
 			)
@@ -15408,7 +15482,7 @@
 	)
 	(symbol
 		(lib_id "power:PWR_FLAG")
-		(at 73.66 134.62 180)
+		(at 69.85 134.62 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -15417,7 +15491,7 @@
 		(fields_autoplaced yes)
 		(uuid "6a73633f-a93e-42fd-a9e7-4493204e8ff1")
 		(property "Reference" "#FLG02"
-			(at 73.66 136.525 0)
+			(at 69.85 136.525 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15426,7 +15500,7 @@
 			)
 		)
 		(property "Value" "PWR_FLAG"
-			(at 73.66 139.7 0)
+			(at 69.85 139.7 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15434,7 +15508,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 73.66 134.62 0)
+			(at 69.85 134.62 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15443,7 +15517,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 73.66 134.62 0)
+			(at 69.85 134.62 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -15452,7 +15526,7 @@
 			)
 		)
 		(property "Description" "Special symbol for telling ERC where power comes from"
-			(at 73.66 134.62 0)
+			(at 69.85 134.62 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -16990,7 +17064,7 @@
 	)
 	(symbol
 		(lib_id "power:VBUS")
-		(at 73.66 132.08 0)
+		(at 69.85 132.08 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -16998,7 +17072,7 @@
 		(dnp no)
 		(uuid "9318c0f0-8c50-4520-b965-6d29b1aad2f6")
 		(property "Reference" "#PWR031"
-			(at 73.66 135.89 0)
+			(at 69.85 135.89 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17007,7 +17081,7 @@
 			)
 		)
 		(property "Value" "VBUS"
-			(at 73.66 128.016 0)
+			(at 69.85 128.016 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17015,7 +17089,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 73.66 132.08 0)
+			(at 69.85 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17024,7 +17098,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 73.66 132.08 0)
+			(at 69.85 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17033,7 +17107,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"VBUS\""
-			(at 73.66 132.08 0)
+			(at 69.85 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17134,7 +17208,7 @@
 	)
 	(symbol
 		(lib_id "Connector:TestPoint")
-		(at 43.18 133.35 0)
+		(at 39.37 133.35 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom no)
@@ -17142,7 +17216,7 @@
 		(dnp no)
 		(uuid "958c38ed-9bf1-4071-849d-c0b009f10225")
 		(property "Reference" "TP2"
-			(at 41.656 128.016 0)
+			(at 37.846 128.016 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17151,7 +17225,7 @@
 			)
 		)
 		(property "Value" "TestPoint"
-			(at 45.72 131.3179 0)
+			(at 41.91 131.3179 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17161,7 +17235,7 @@
 			)
 		)
 		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
-			(at 48.26 133.35 0)
+			(at 44.45 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17170,7 +17244,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 48.26 133.35 0)
+			(at 44.45 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17179,7 +17253,7 @@
 			)
 		)
 		(property "Description" "test point"
-			(at 43.18 133.35 0)
+			(at 39.37 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17188,7 +17262,7 @@
 			)
 		)
 		(property "LCSC Part #" ""
-			(at 43.18 133.35 0)
+			(at 39.37 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17197,7 +17271,7 @@
 			)
 		)
 		(property "Sim.Pin" ""
-			(at 43.18 133.35 0)
+			(at 39.37 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17354,7 +17428,7 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 43.18 133.35 0)
+		(at 39.37 133.35 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -17363,7 +17437,7 @@
 		(fields_autoplaced yes)
 		(uuid "97a3e3de-22b8-4199-b74f-92687313969e")
 		(property "Reference" "#PWR032"
-			(at 43.18 139.7 0)
+			(at 39.37 139.7 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17372,7 +17446,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 43.18 138.43 0)
+			(at 39.37 138.43 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17380,7 +17454,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 43.18 133.35 0)
+			(at 39.37 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17389,7 +17463,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 43.18 133.35 0)
+			(at 39.37 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -17398,7 +17472,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 43.18 133.35 0)
+			(at 39.37 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19065,7 +19139,7 @@
 	)
 	(symbol
 		(lib_id "Connector:TestPoint")
-		(at 66.04 133.35 0)
+		(at 62.23 133.35 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom no)
@@ -19073,7 +19147,7 @@
 		(dnp no)
 		(uuid "b92a4d1b-07e6-49d3-a64d-78c7c028aa92")
 		(property "Reference" "TP6"
-			(at 64.516 128.016 0)
+			(at 60.706 128.016 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19082,7 +19156,7 @@
 			)
 		)
 		(property "Value" "TestPoint"
-			(at 68.58 131.3179 0)
+			(at 64.77 131.3179 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19092,7 +19166,7 @@
 			)
 		)
 		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
-			(at 71.12 133.35 0)
+			(at 67.31 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19101,7 +19175,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 71.12 133.35 0)
+			(at 67.31 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19110,7 +19184,7 @@
 			)
 		)
 		(property "Description" "test point"
-			(at 66.04 133.35 0)
+			(at 62.23 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19119,7 +19193,7 @@
 			)
 		)
 		(property "LCSC Part #" ""
-			(at 66.04 133.35 0)
+			(at 62.23 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19128,7 +19202,7 @@
 			)
 		)
 		(property "Sim.Pin" ""
-			(at 66.04 133.35 0)
+			(at 62.23 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19412,7 +19486,7 @@
 	)
 	(symbol
 		(lib_id "Connector:TestPoint")
-		(at 26.67 132.08 180)
+		(at 22.86 132.08 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom no)
@@ -19420,7 +19494,7 @@
 		(dnp no)
 		(uuid "bfeeff69-a585-4a5e-87c7-e59dae28a3de")
 		(property "Reference" "TP3"
-			(at 28.194 137.414 0)
+			(at 24.384 137.414 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19429,7 +19503,7 @@
 			)
 		)
 		(property "Value" "TestPoint"
-			(at 24.13 134.1121 0)
+			(at 20.32 134.1121 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19439,7 +19513,7 @@
 			)
 		)
 		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
-			(at 21.59 132.08 0)
+			(at 17.78 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19448,7 +19522,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 21.59 132.08 0)
+			(at 17.78 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19457,7 +19531,7 @@
 			)
 		)
 		(property "Description" "test point"
-			(at 26.67 132.08 0)
+			(at 22.86 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19466,7 +19540,7 @@
 			)
 		)
 		(property "LCSC Part #" ""
-			(at 26.67 132.08 0)
+			(at 22.86 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19475,7 +19549,7 @@
 			)
 		)
 		(property "Sim.Pin" ""
-			(at 26.67 132.08 0)
+			(at 22.86 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19497,7 +19571,7 @@
 	)
 	(symbol
 		(lib_id "power:+3.3V")
-		(at 34.29 132.08 0)
+		(at 30.48 132.08 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -19505,7 +19579,7 @@
 		(dnp no)
 		(uuid "c14727a5-4705-4dc4-a770-6aa2ce5824e7")
 		(property "Reference" "#PWR030"
-			(at 34.29 135.89 0)
+			(at 30.48 135.89 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19514,7 +19588,7 @@
 			)
 		)
 		(property "Value" "+3.3V"
-			(at 34.29 127.762 0)
+			(at 30.48 127.762 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19522,7 +19596,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 34.29 132.08 0)
+			(at 30.48 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19531,7 +19605,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 34.29 132.08 0)
+			(at 30.48 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -19540,7 +19614,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"+3.3V\""
-			(at 34.29 132.08 0)
+			(at 30.48 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21389,7 +21463,7 @@
 	)
 	(symbol
 		(lib_id "power:PWR_FLAG")
-		(at 83.82 133.35 0)
+		(at 80.01 133.35 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -21398,7 +21472,7 @@
 		(fields_autoplaced yes)
 		(uuid "f0a87cd7-0e2e-4083-8c99-4fe7f5eafdef")
 		(property "Reference" "#FLG01"
-			(at 83.82 131.445 0)
+			(at 80.01 131.445 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21407,7 +21481,7 @@
 			)
 		)
 		(property "Value" "PWR_FLAG"
-			(at 83.82 128.27 0)
+			(at 80.01 128.27 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21415,7 +21489,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 83.82 133.35 0)
+			(at 80.01 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21424,7 +21498,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 83.82 133.35 0)
+			(at 80.01 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21433,7 +21507,7 @@
 			)
 		)
 		(property "Description" "Special symbol for telling ERC where power comes from"
-			(at 83.82 133.35 0)
+			(at 80.01 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21753,6 +21827,72 @@
 			(project "esphome-rf-doorbell"
 				(path "/b07d5988-2788-4b3b-a250-602b43e32b02"
 					(reference "#PWR05")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 91.44 133.35 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "fa48230e-b6bd-43e9-87d5-9bab842f0148")
+		(property "Reference" "#FLG03"
+			(at 91.44 131.445 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 91.44 128.27 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 91.44 133.35 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 91.44 133.35 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Special symbol for telling ERC where power comes from"
+			(at 91.44 133.35 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "a6dfc633-8684-47bf-b3f1-d068151b81c8")
+		)
+		(instances
+			(project "esphome-rf-doorbell"
+				(path "/b07d5988-2788-4b3b-a250-602b43e32b02"
+					(reference "#FLG03")
 					(unit 1)
 				)
 			)
@@ -22084,7 +22224,7 @@
 	)
 	(symbol
 		(lib_id "Connector:TestPoint")
-		(at 34.29 132.08 180)
+		(at 30.48 132.08 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom no)
@@ -22092,7 +22232,7 @@
 		(dnp no)
 		(uuid "fdbbd7d3-9aac-42fc-afb9-0afe7d30bab3")
 		(property "Reference" "TP1"
-			(at 35.814 137.414 0)
+			(at 32.004 137.414 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -22101,7 +22241,7 @@
 			)
 		)
 		(property "Value" "TestPoint"
-			(at 31.75 134.1121 0)
+			(at 27.94 134.1121 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -22111,7 +22251,7 @@
 			)
 		)
 		(property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm"
-			(at 29.21 132.08 0)
+			(at 25.4 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -22120,7 +22260,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 29.21 132.08 0)
+			(at 25.4 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -22129,7 +22269,7 @@
 			)
 		)
 		(property "Description" "test point"
-			(at 34.29 132.08 0)
+			(at 30.48 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -22138,7 +22278,7 @@
 			)
 		)
 		(property "LCSC Part #" ""
-			(at 34.29 132.08 0)
+			(at 30.48 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -22147,7 +22287,7 @@
 			)
 		)
 		(property "Sim.Pin" ""
-			(at 34.29 132.08 0)
+			(at 30.48 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
