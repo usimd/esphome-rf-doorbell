@@ -1,0 +1,172 @@
+(footprint "Connector_PogoClamp_1.27mm"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(property "Reference" "REF**"
+		(at 0 -5.08 0)
+		(unlocked yes)
+		(layer "F.SilkS")
+		(uuid "55a8904d-b29c-49ba-ad52-b50c3c796539")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.1)
+			)
+		)
+	)
+	(property "Value" "Connector_PogoClamp_1.27mm"
+		(at 0 4.85 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(uuid "24ec7f4c-8442-4436-94e4-caf368c3fb92")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "e2d3eb4b-eb36-4cad-9f08-66f3ae56f307")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "9bd3b3fa-d8fe-43ed-b626-1e354e5b1d2a")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_circle
+		(center 0 -3.175)
+		(end 0.6 -3.175)
+		(stroke
+			(width 0.15)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "95ca1b7c-071b-4d85-a530-458cd98759a4")
+	)
+	(fp_circle
+		(center 0 -1.905)
+		(end 0.6 -1.905)
+		(stroke
+			(width 0.15)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "21b41c00-19f9-4d80-850d-12bf5c9d30b4")
+	)
+	(fp_circle
+		(center 0 -0.635)
+		(end 0.6 -0.635)
+		(stroke
+			(width 0.15)
+			(type default)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "3c35d642-86fb-4bb5-afb3-9c4a2a24aa74")
+	)
+	(fp_circle
+		(center 0 0.635)
+		(end 0.6 0.635)
+		(stroke
+			(width 0.15)
+			(type default)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "8df11a73-9a89-4431-8e7c-e8d6f42ee712")
+	)
+	(fp_circle
+		(center 0 1.905)
+		(end 0.6 1.905)
+		(stroke
+			(width 0.15)
+			(type default)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "81ecb9db-1c5f-46ab-bd7d-1ea10d653636")
+	)
+	(fp_circle
+		(center 0 3.175)
+		(end 0.6 3.175)
+		(stroke
+			(width 0.15)
+			(type default)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "c4a55226-e7fc-4cd2-9190-3f5471c42792")
+	)
+	(fp_text user "${REFERENCE}"
+		(at 0 6.35 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(uuid "e3a3af5e-8391-427e-9f73-eced504d851f")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(pad "1" smd circle
+		(at 0 -3.175)
+		(size 1 1)
+		(layers "F.Cu" "F.Mask")
+		(uuid "7f47e525-a1ff-43d4-b197-2560c9e3d2fb")
+	)
+	(pad "2" smd circle
+		(at 0 -1.905)
+		(size 1 1)
+		(layers "F.Cu" "F.Mask")
+		(uuid "0dfa23f2-8333-4034-a41d-3a586ea24153")
+	)
+	(pad "3" smd circle
+		(at 0 -0.635)
+		(size 1 1)
+		(layers "F.Cu" "F.Mask")
+		(uuid "bf12e1fe-c58b-4833-82ee-aa80d89c9515")
+	)
+	(pad "4" smd circle
+		(at 0 0.635)
+		(size 1 1)
+		(layers "F.Cu" "F.Mask")
+		(uuid "bd9810dc-e153-4996-b18c-4fb4c65d5a68")
+	)
+	(pad "5" smd circle
+		(at 0 1.905)
+		(size 1 1)
+		(layers "F.Cu" "F.Mask")
+		(uuid "9ccedaa8-f08c-482f-a272-d9ea4c3ac608")
+	)
+	(pad "6" smd circle
+		(at 0 3.175)
+		(size 1 1)
+		(layers "F.Cu" "F.Mask")
+		(uuid "104707d9-4c71-4433-bf38-0edb32ff7dcb")
+	)
+	(embedded_fonts no)
+)

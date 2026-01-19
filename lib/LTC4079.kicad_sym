@@ -2,51 +2,28 @@
 	(version 20241209)
 	(generator "kicad_symbol_editor")
 	(generator_version "9.0")
-	(symbol "TPS629206DRLR"
-		(pin_names
-			(offset 0.254)
-		)
+	(symbol "LTC4079"
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(property "Reference" "U"
-			(at 15.24 8.89 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-			)
-		)
-		(property "Value" "TPS629206"
-			(at 15.24 6.35 0)
-			(effects
-				(font
-					(size 1.524 1.524)
-				)
-			)
-		)
-		(property "Footprint" "SOT5X3-8_DRL_TEX"
-			(at 10.668 11.43 0)
+			(at 0 15.24 0)
 			(effects
 				(font
 					(size 1.27 1.27)
-					(italic yes)
 				)
-				(hide yes)
 			)
 		)
-		(property "Datasheet" "TPS629206DRLR"
-			(at 9.652 8.636 0)
+		(property "Value" "LTC4079"
+			(at 0 12.7 0)
 			(effects
 				(font
 					(size 1.27 1.27)
-					(italic yes)
 				)
-				(hide yes)
 			)
 		)
-		(property "Description" ""
-			(at 0 0 0)
+		(property "Footprint" "Package_DFN_QFN:DFN-10-1EP_3x3mm_P0.5mm_EP1.65x2.38mm"
+			(at 0.508 -27.94 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -54,16 +31,8 @@
 				(hide yes)
 			)
 		)
-		(property "ki_locked" ""
-			(at 0 0 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "ki_keywords" "TPS629206DRLR"
-			(at 0 0 0)
+		(property "Datasheet" "https://www.analog.com/media/en/technical-documentation/data-sheets/ltc4079.pdf"
+			(at -3.81 -30.734 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -71,8 +40,8 @@
 				(hide yes)
 			)
 		)
-		(property "ki_fp_filters" "SOT5X3-8_DRL_TEX SOT5X3-8_DRL_TEX-M SOT5X3-8_DRL_TEX-L"
-			(at 0 0 0)
+		(property "Description" "60V, 250mA Linear Charger with Low Quiescent Current"
+			(at -0.508 -24.638 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -80,18 +49,38 @@
 				(hide yes)
 			)
 		)
-		(symbol "TPS629206DRLR_0_1"
-			(pin input line
-				(at 5.08 2.54 0)
+		(property "MPN" "LTC4079EDD#TRPBF"
+			(at 0 -34.798 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "LTC4079_1_1"
+			(rectangle
+				(start -8.89 10.795)
+				(end 8.89 -12.7)
+				(stroke
+					(width 0)
+					(type solid)
+				)
+				(fill
+					(type background)
+				)
+			)
+			(pin power_in line
+				(at -11.43 8.89 0)
 				(length 2.54)
-				(name "VIN"
+				(name "IN"
 					(effects
 						(font
 							(size 1.27 1.27)
 						)
 					)
 				)
-				(number "6"
+				(number "1"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -100,9 +89,27 @@
 				)
 			)
 			(pin input line
-				(at 5.08 0 0)
+				(at -11.43 3.81 0)
 				(length 2.54)
 				(name "EN"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin open_collector line
+				(at -11.43 -1.27 0)
+				(length 2.54)
+				(name "~{CHRG}"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -117,28 +124,10 @@
 					)
 				)
 			)
-			(pin unspecified line
-				(at 25.4 2.54 180)
-				(length 2.54)
-				(name "SW"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-				(number "4"
-					(effects
-						(font
-							(size 1.27 1.27)
-						)
-					)
-				)
-			)
 			(pin input line
-				(at 25.4 0 180)
+				(at -11.43 -5.08 0)
 				(length 2.54)
-				(name "VOS"
+				(name "PROG"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -154,16 +143,16 @@
 				)
 			)
 			(pin input line
-				(at 25.4 -6.35 180)
+				(at -11.43 -8.89 0)
 				(length 2.54)
-				(name "FB/VSET"
+				(name "TIMER"
 					(effects
 						(font
 							(size 1.27 1.27)
 						)
 					)
 				)
-				(number "1"
+				(number "6"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -171,17 +160,17 @@
 					)
 				)
 			)
-			(pin output line
-				(at 25.4 -10.16 180)
+			(pin power_in line
+				(at 0 -15.24 90)
 				(length 2.54)
-				(name "PG"
+				(name "GND"
 					(effects
 						(font
 							(size 1.27 1.27)
 						)
 					)
 				)
-				(number "2"
+				(number "11"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -189,23 +178,46 @@
 					)
 				)
 			)
-		)
-		(symbol "TPS629206DRLR_1_1"
-			(rectangle
-				(start 7.62 5.08)
-				(end 22.86 -12.7)
-				(stroke
-					(width 0)
-					(type default)
+			(pin power_out line
+				(at 11.43 8.89 180)
+				(length 2.54)
+				(name "BAT"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
 				)
-				(fill
-					(type background)
+				(number "10"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
 				)
 			)
-			(pin input line
-				(at 5.08 -6.35 0)
+			(pin passive line
+				(at 11.43 3.81 180)
 				(length 2.54)
-				(name "MODE"
+				(name "FB"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "9"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 11.43 -1.27 180)
+				(length 2.54)
+				(name "FBG"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -220,10 +232,28 @@
 					)
 				)
 			)
-			(pin power_out line
-				(at 13.97 -15.24 90)
+			(pin output line
+				(at 11.43 -3.81 180)
 				(length 2.54)
-				(name "GND"
+				(name "NTCBIAS"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin input line
+				(at 11.43 -8.89 180)
+				(length 2.54)
+				(name "NTC"
 					(effects
 						(font
 							(size 1.27 1.27)

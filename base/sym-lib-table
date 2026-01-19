@@ -1,5 +1,6 @@
 (sym_lib_table
   (version 7)
-  (lib (name "BQ25628E")(type "KiCad")(uri "${KIPRJMOD}/../lib/BQ25628E.kicad_sym")(options "")(descr ""))
-  (lib (name "TPS629206")(type "KiCad")(uri "${KIPRJMOD}/../lib/TPS629206.kicad_sym")(options "")(descr ""))
+  (lib (name "Wio-SX1262 Schematic Package")(type "KiCad")(uri "${KIPRJMOD}/../lib/Wio-SX1262 Schematic Package.kicad_sym")(options "")(descr ""))
+  (lib (name "LTC4079")(type "KiCad")(uri "${KIPRJMOD}/../lib/LTC4079.kicad_sym")(options "")(descr ""))
+  (lib (name "ISL23315")(type "KiCad")(uri "${KIPRJMOD}/../lib/ISL23315.kicad_sym")(options "")(descr ""))
 )

@@ -1,33 +1,33 @@
 # ESPHome RF Doorbell
 
-A smart doorbell system for Home Assistant using ESPHome, featuring battery power management, RF remote control, and deep sleep optimization.
+A smart doorbell system for Home Assistant using ESPHome, featuring battery power management, LoRa remote control, and deep sleep optimization.
 
-## 🌟 Features
+## Features
 
-- **ESP32-S2** microcontroller with WiFi connectivity
+- **ESP32-C6-MINI-1** microcontroller with WiFi/BLE/Zigbee connectivity
 - **Battery Management:**
-  - BQ25628E intelligent battery charger with I2C control
-  - MAX17260 fuel gauge for accurate battery monitoring
-  - Li-Ion battery support with USB-C charging
-- **RF Communication:**
-  - RFM69W sub-GHz transceiver (868/915 MHz)
-  - AES-128 encryption
+  - LTC4079 Li-Ion battery charger (250mA max, thermal regulation)
+  - MAX17260 fuel gauge for accurate battery monitoring (ModelGauge m5)
+  - Li-Ion battery support with USB-C or doorbell transformer charging
+- **LoRa Communication:**
+  - Wio-SX1262 LoRa module (868/915 MHz)
+  - Long-range wireless communication
   - Remote pairing system (like garage door opener)
-- **Deep Sleep:**
-  - Wake on RF packet or doorbell press
+- **Ultra-Low Power:**
+  - TPS63900 buck-boost converter (400nA quiescent)
+  - Deep sleep with wake on LoRa packet or doorbell press
   - Battery life optimization
-  - Configurable sleep intervals
 - **Home Assistant Integration:**
   - Real-time battery monitoring
   - Doorbell notifications
   - Remote door opener control
   - Bell mute functionality
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 esphome-rf-doorbell/
-├── base/                     # Main doorbell PCB
+├── base/                     # Main doorbell PCB (Rev3)
 │   ├── esphome-rf-doorbell.kicad_pcb
 │   ├── esphome-rf-doorbell.kicad_sch
 │   └── bom/
@@ -36,36 +36,47 @@ esphome-rf-doorbell/
 │   ├── remote.kicad_sch
 │   └── firmware/             # PIC microcontroller firmware
 ├── lib/                      # KiCad component libraries
+├── datasheets/               # IC datasheets and context
 └── esphome/                  # ESPHome firmware
     ├── doorbell.yaml         # Main configuration
     ├── secrets.yaml.example  # Template for credentials
     ├── GETTING_STARTED.md    # Setup guide
-    ├── README.md            # Component documentation
-    └── components/          # Custom components
-        ├── bq25628e/        # Battery charger driver
-        ├── max17260/        # Fuel gauge driver
-        └── rfm69/           # RF transceiver driver
-
+    ├── README.md             # Component documentation
+    └── components/           # Custom components
+        ├── bq25628e/         # Battery charger driver (legacy - needs LTC4079)
+        ├── max17260/         # Fuel gauge driver
+        └── rfm69/            # RF transceiver driver (legacy - needs SX1262)
 ```
 
-## 🔧 Hardware
+## Hardware (Rev3)
 
 ### Main PCB Components
 
-- **ESP32-S2-MINI-2:** Main microcontroller
-- **BQ25628E:** Li-Ion battery charger with I2C interface
-- **MAX17260:** Battery fuel gauge
-- **RFM69W:** Sub-GHz RF transceiver module
-- **TPS629206:** Buck converter for efficient 3.3V power
-- **Optocouplers:** For isolated doorbell/buzzer control
+| Ref | Part Number | Function |
+|-----|-------------|----------|
+| U1 | LTC4079 | Li-Ion Battery Charger |
+| U3 | TPS63900 | Buck-Boost Converter (3.3V output) |
+| U4 | MAX17260 | Battery Fuel Gauge |
+| U5 | LTV-354T | Optocoupler (bell detection) |
+| U6 | G3VM-31DR | PhotoMOS Relay (SPST-NO, door opener) |
+| U7 | Wio-SX1262 | LoRa Module (868/915 MHz) |
+| U8 | G3VM-63ER | PhotoMOS Relay (SPST-NC, bell mute) |
+| U9 | ESP32-C6-MINI-1 | WiFi/BLE/Zigbee MCU |
+| U10 | ISL23315 | Digital Potentiometer (I2C, charge current) |
+
+### PCB Specifications
+
+- **Layers:** 4-layer stackup
+- **Size:** 62.3 x 25.9 mm
+- **Design:** KiCad 8.x
 
 ### RF Remote (Optional)
 
 - **PIC12F microcontroller:** Low-power remote controller
-- **RFM69W:** Matching RF transceiver
+- **Wio-SX1262:** Matching LoRa transceiver
 - **CR2032 battery:** Long-lasting coin cell power
 
-## 🚀 Quick Start
+## Quick Start
 
 1. **Clone the repository:**
    ```bash
@@ -90,40 +101,41 @@ esphome-rf-doorbell/
    esphome run doorbell.yaml
    ```
 
-## 📊 Pin Mapping
+## Pin Mapping (ESP32-C6-MINI-1)
 
-| Function | ESP32 GPIO | Connected To |
-|----------|------------|--------------|
-| I2C1 SDA | GPIO8 | BQ25628E (Charger) |
-| I2C1 SCL | GPIO9 | BQ25628E (Charger) |
-| I2C2 SDA | GPIO5 | MAX17260 (Fuel Gauge) |
-| I2C2 SCL | GPIO6 | MAX17260 (Fuel Gauge) |
-| SPI CLK | GPIO12 | RFM69 |
-| SPI MOSI | GPIO11 | RFM69 |
-| SPI MISO | GPIO13 | RFM69 |
-| SPI CS | GPIO15 | RFM69 |
-| RF Reset | GPIO14 | RFM69 Reset |
-| RF Interrupt | GPIO7 | RFM69 DIO0 |
+| Function | GPIO | Connected To |
+|----------|------|--------------|
+| I2C SDA | GPIO16 | LTC4079 (Charger) |
+| I2C SCL | GPIO15 | LTC4079 (Charger) |
+| I2C2 SDA | GPIO36 | MAX17260 (Fuel Gauge) |
+| I2C2 SCL | GPIO35 | MAX17260 (Fuel Gauge) |
+| SPI CLK | GPIO8 | Wio-SX1262 |
+| SPI MOSI | GPIO10 | Wio-SX1262 |
+| SPI MISO | GPIO9 | Wio-SX1262 |
+| SPI CS | GPIO11 | Wio-SX1262 |
+| LoRa Reset | GPIO7 | Wio-SX1262 Reset |
+| LoRa DIO1 | GPIO6 | Wio-SX1262 DIO1 |
+| LoRa Busy | GPIO5 | Wio-SX1262 BUSY |
 | Battery Alert | GPIO21 | MAX17260 Alert |
-| Bell Input | GPIO1 | Doorbell Button |
-| Bell Mute | GPIO3 | Bell Disable Output |
-| Door Opener | GPIO2 | Buzzer/Opener Control |
-| RF Power | GPIO10 | RFM69 Power Enable |
+| Bell Input | GPIO13 | Doorbell Button (via optocoupler) |
+| Bell Mute | GPIO12 | G3VM-63ER (NC relay) |
+| Door Opener | GPIO14 | G3VM-31DR (NO relay) |
+| RF Power | GPIO33 | Wio-SX1262 LDO Enable |
+| Charger CE | GPIO18 | LTC4079 CE (active low) |
 
-## 🔋 Power Consumption
+## Power Consumption
 
 | Mode | Current Draw | Notes |
 |------|--------------|-------|
-| Active (WiFi) | ~80mA | Normal operation |
-| Idle (WiFi) | ~50mA | Connected, no activity |
-| Deep Sleep | <1mA | Wake on interrupt/timer |
-| Charging | 50mA - 1A | Configurable |
+| Active (WiFi) | ~25mA | ESP32-C6 with WiFi active |
+| Deep Sleep | <10uA | TPS63900 ultra-low quiescent |
+| Charging | up to 250mA | LTC4079 programmable |
 
-**Estimated battery life** (with 1000mAh battery):
-- Always on: ~12-20 hours
-- With deep sleep (5 min intervals): Several days to weeks
+**Estimated battery life** (with 350mAh battery):
+- Always on: ~14 hours
+- With deep sleep (60s intervals): Weeks to months
 
-## 📱 Home Assistant Integration
+## Home Assistant Integration
 
 Once configured, you'll have access to:
 
@@ -137,22 +149,22 @@ Once configured, you'll have access to:
 - Door opener button
 - Bell mute switch
 - Deep sleep management
-- RF pairing mode
+- LoRa pairing mode
 
 **Automations:**
 - Doorbell press notifications
 - Low battery alerts
-- Automatic door opening via RF remote
+- Automatic door opening via LoRa remote
 
-## 🛠️ Development
+## Development
 
 ### Custom Components
 
-All custom ESPHome components are located in `esphome/components/`:
+Custom ESPHome components are located in `esphome/components/`:
 
-- **bq25628e:** Full I2C control of battery charger
-- **max17260:** Fuel gauge with ModelGauge m5 algorithm
-- **rfm69:** Complete RF transceiver with encryption and pairing
+- **bq25628e:** Legacy component - needs replacement with LTC4079 driver
+- **max17260:** Fuel gauge with ModelGauge m5 algorithm (working)
+- **rfm69:** Legacy component - needs replacement with SX1262 driver
 
 ### Building from Source
 
@@ -168,14 +180,30 @@ esphome compile doorbell.yaml
 esphome upload doorbell.yaml --device esphome-rf-doorbell.local
 ```
 
-## 📖 Documentation
+## Documentation
 
 - [Getting Started Guide](esphome/GETTING_STARTED.md) - Setup and installation
 - [Component Documentation](esphome/README.md) - Detailed component reference
 - [KiCad Schematics](base/esphome-rf-doorbell.kicad_sch) - Hardware design
+- [Datasheet Context](datasheets/DATASHEET_CONTEXT.md) - IC inventory and references
 - [BOM](base/bom/ibom.html) - Interactive bill of materials
 
-## 🤝 Contributing
+## Hardware Revision History
+
+| Rev | MCU | Charger | RF Module | Buck/Boost | Notes |
+|-----|-----|---------|-----------|------------|-------|
+| Rev1 | ESP32-S2 | BQ25628E | RFM69W | TPS629206 | Initial design |
+| Rev2 | ESP32-S2 | BQ25628E | RFM69W | TPS629206 | Bug fixes |
+| **Rev3** | **ESP32-C6-MINI-1** | **LTC4079** | **Wio-SX1262** | **TPS63900** | Current (WIP) |
+
+## Known Issues (Rev3 WIP)
+
+- [ ] ESPHome firmware still references BQ25628E (needs LTC4079 component)
+- [ ] ESPHome firmware still references RFM69 (needs SX1262 component)
+- [ ] Optocoupler may need active-high modification (see SCHEMATIC_MODIFICATIONS_ACTIVE_HIGH.md)
+- [ ] Pin mappings in doorbell.yaml need verification against schematic
+
+## Contributing
 
 Contributions are welcome! Please feel free to submit pull requests or open issues for:
 - Bug fixes
@@ -183,19 +211,20 @@ Contributions are welcome! Please feel free to submit pull requests or open issu
 - Documentation improvements
 - Hardware design optimizations
 
-## 📜 License
+## License
 
 This project is open source. See LICENSE file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - ESPHome community for excellent framework
 - Home Assistant for smart home integration
-- Texas Instruments for BQ25628E datasheet and reference design
-- Maxim Integrated for MAX17260 documentation
-- HopeRF for RFM69 modules
+- Analog Devices for LTC4079 and MAX17260
+- Texas Instruments for TPS63900
+- Seeed Studio for Wio-SX1262 module
+- Espressif for ESP32-C6
 
-## ⚠️ Disclaimer
+## Disclaimer
 
 This project involves:
 - Mains voltage wiring (for doorbell/buzzer)

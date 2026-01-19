@@ -1,10 +1,13 @@
 # ESPHome RF Doorbell - Custom Components
 
 This directory contains custom ESPHome components for the smart doorbell project featuring:
-- **ESP32-S2** microcontroller
-- **BQ25628E** battery charger IC
+- **ESP32-C6-MINI-1** microcontroller (Rev3)
+- **LTC4079** battery charger IC (Rev3 - component pending)
 - **MAX17260** fuel gauge IC
-- **RFM69W** sub-GHz transceiver
+- **Wio-SX1262** LoRa transceiver (Rev3 - component pending)
+
+> **Note:** The firmware is currently in transition from Rev2 to Rev3 hardware. Some components
+> reference legacy ICs (BQ25628E, RFM69W) and need updating for Rev3 hardware (LTC4079, Wio-SX1262).
 
 ## Project Structure
 
@@ -13,17 +16,17 @@ esphome/
 ├── doorbell.yaml              # Main ESPHome configuration
 ├── secrets.yaml.example       # Template for secrets
 └── components/
-    ├── bq25628e/             # Battery charger component
+    ├── bq25628e/             # Battery charger component (LEGACY - needs LTC4079)
     │   ├── __init__.py
     │   ├── bq25628e.h
     │   ├── bq25628e.cpp
     │   └── sensor.py
-    ├── max17260/             # Fuel gauge component
+    ├── max17260/             # Fuel gauge component (working)
     │   ├── __init__.py
     │   ├── max17260.h
     │   ├── max17260.cpp
     │   └── sensor.py
-    └── rfm69/                # RF transceiver component
+    └── rfm69/                # RF transceiver component (LEGACY - needs SX1262)
         ├── __init__.py
         ├── rfm69.h
         └── rfm69.cpp
@@ -31,49 +34,26 @@ esphome/
 
 ## Components Overview
 
-### 1. BQ25628E Battery Charger
+### 1. LTC4079 Battery Charger (Rev3 - Pending)
 
-The BQ25628E component provides I2C control and monitoring of the Texas Instruments BQ25628E battery charger.
+The LTC4079 is a standalone linear Li-Ion battery charger with thermal regulation.
 
 **Features:**
-- Bus voltage monitoring (VBUS)
-- Battery voltage monitoring
-- Charge current monitoring
-- System voltage monitoring
-- Configurable charge current limit (0.05A - 3.0A)
-- Configurable charge voltage limit (3.84V - 4.624V)
-- Configurable input current limit (0.1A - 3.2A)
-- Charger status reporting
-- Fault detection and reporting
+- Programmable charge current (via external resistor or ISL23315 digipot)
+- Maximum 250mA charge current
+- Thermal regulation (reduces current at high temp)
+- Charge status indication (CHRG pin)
+- No I2C interface (unlike BQ25628E)
 
-**I2C Configuration:**
-- Default address: `0x6B`
-- Connected to I2C Bus 1 (SDA1/SCL1)
-- GPIOs: SDA=GPIO8, SCL=GPIO9
+**Hardware Notes:**
+- Charge current set by resistor on PROG pin (or ISL23315 digital pot at U10)
+- CHRG pin active-low during charging
+- CE pin enables charging when low
+- Connected to I2C bus at GPIO15/16 via ISL23315 for current control
 
-**Usage Example:**
-```yaml
-bq25628e:
-  id: battery_charger
-  i2c_id: i2c_bus1
-  address: 0x6B
-  update_interval: 60s
-  charge_current_limit: 1.0    # 1A charging current
-  charge_voltage_limit: 4.2    # 4.2V for Li-Ion
-  input_current_limit: 0.5     # 500mA USB input
+> **TODO:** Create LTC4079 ESPHome component that controls charging via ISL23315 digital potentiometer
 
-sensor:
-  - platform: bq25628e
-    bq25628e_id: battery_charger
-    bus_voltage:
-      name: "Charger Input Voltage"
-    battery_voltage:
-      name: "Battery Voltage"
-    charge_current:
-      name: "Charge Current"
-```
-
-### 2. MAX17260 Fuel Gauge
+### 2. MAX17260 Fuel Gauge (Working)
 
 The MAX17260 component interfaces with the Maxim Integrated MAX17260 fuel gauge for accurate battery monitoring.
 
@@ -89,7 +69,7 @@ The MAX17260 component interfaces with the Maxim Integrated MAX17260 fuel gauge 
 **I2C Configuration:**
 - Default address: `0x36`
 - Connected to I2C Bus 2 (SDA2/SCL2)
-- GPIOs: SDA=GPIO5, SCL=GPIO6
+- GPIOs: SDA=GPIO36, SCL=GPIO35
 
 **Usage Example:**
 ```yaml
@@ -114,87 +94,82 @@ sensor:
       name: "Battery Time to Empty"
 ```
 
-### 3. RFM69 Transceiver
+### 3. Wio-SX1262 LoRa Transceiver (Rev3 - Pending)
 
-The RFM69 component provides wireless communication capabilities using the HopeRF RFM69W sub-GHz transceiver module.
+The Wio-SX1262 is a LoRa module based on the Semtech SX1262 chip.
 
 **Features:**
-- Frequency range: 290-1020 MHz (configured for 868 MHz EU band)
-- Packet-based communication
-- AES-128 encryption support
-- Device pairing mechanism
-- RSSI measurement
-- Address filtering
-- CRC checking
-- Interrupt-driven packet reception
+- Frequency range: 150-960 MHz (configured for 868 MHz EU or 915 MHz US)
+- LoRa modulation for long range
+- Low power consumption
+- SPI interface
 
-**SPI Configuration:**
+**SPI Configuration (Rev3):**
 - Connected to SPI bus
 - GPIOs:
-  - CLK: GPIO12 (RF.SCLK)
-  - MOSI: GPIO11 (RF.MOSI)
-  - MISO: GPIO13 (RF.MISO)
-  - CS: GPIO15 (RF.CE)
-  - Reset: GPIO14 (RF.Reset)
-  - Interrupt: GPIO7 (RF.IO0/DIO0)
+  - CLK: GPIO8
+  - MOSI: GPIO10
+  - MISO: GPIO9
+  - CS: GPIO11
+  - Reset: GPIO7
+  - DIO1: GPIO6 (interrupt)
+  - BUSY: GPIO5
 
-**Usage Example:**
-```yaml
-rfm69:
-  id: rf_transceiver
-  spi_id: spi_bus
-  cs_pin: GPIO15
-  reset_pin: GPIO14
-  interrupt_pin: GPIO7
-  frequency: 868.0              # 868 MHz (EU ISM band)
-  node_id: 1                    # This device's ID
-  network_id: 100               # Network identifier
-  encryption_key: !secret rf_encryption_key
-  is_high_power: false          # RFM69W (not RFM69HW)
-  on_packet_received:
-    then:
-      - logger.log: "RF packet received"
-      - script.execute: handle_rf_packet
-```
+> **TODO:** Create SX1262 ESPHome component (or adapt existing LoRa libraries)
 
-## GPIO Pin Mapping
+### 4. Legacy BQ25628E Component (Rev2 only)
+
+**Note:** This component is for Rev2 hardware only. Rev3 uses LTC4079.
+
+The BQ25628E component provides I2C control and monitoring of the Texas Instruments BQ25628E battery charger.
+
+**Features:**
+- Bus voltage monitoring (VBUS)
+- Battery voltage monitoring
+- Charge current monitoring
+- Configurable charge parameters via I2C
+
+## GPIO Pin Mapping (Rev3 - ESP32-C6-MINI-1)
 
 Based on the schematic analysis, here's the complete GPIO mapping:
 
 | Function | GPIO | Label | Description |
 |----------|------|-------|-------------|
-| I2C1 SDA | GPIO8 | SDA1 | BQ25628E battery charger |
-| I2C1 SCL | GPIO9 | SCL1 | BQ25628E battery charger |
-| I2C2 SDA | GPIO5 | SDA2 | MAX17260 fuel gauge |
-| I2C2 SCL | GPIO6 | SCL2 | MAX17260 fuel gauge |
-| SPI CLK | GPIO12 | RF.SCLK | RFM69 SPI clock |
-| SPI MOSI | GPIO11 | RF.MOSI | RFM69 SPI MOSI |
-| SPI MISO | GPIO13 | RF.MISO | RFM69 SPI MISO |
-| SPI CS | GPIO15 | RF.CE | RFM69 chip select |
-| RF Reset | GPIO14 | RF.Reset | RFM69 reset pin |
-| RF Int | GPIO7 | RF.IO0 | RFM69 interrupt (DIO0) |
+| I2C1 SDA | GPIO16 | SDA1 | LTC4079 charger (via ISL23315) |
+| I2C1 SCL | GPIO15 | SCL1 | LTC4079 charger (via ISL23315) |
+| I2C2 SDA | GPIO36 | SDA2 | MAX17260 fuel gauge |
+| I2C2 SCL | GPIO35 | SCL2 | MAX17260 fuel gauge |
+| SPI CLK | GPIO8 | RF.SCLK | Wio-SX1262 SPI clock |
+| SPI MOSI | GPIO10 | RF.MOSI | Wio-SX1262 SPI MOSI |
+| SPI MISO | GPIO9 | RF.MISO | Wio-SX1262 SPI MISO |
+| SPI CS | GPIO11 | RF.CE | Wio-SX1262 chip select |
+| RF Reset | GPIO7 | RF.Reset | Wio-SX1262 reset pin |
+| RF DIO1 | GPIO6 | RF.DIO1 | Wio-SX1262 interrupt |
+| RF BUSY | GPIO5 | RF.BUSY | Wio-SX1262 busy status |
 | Battery Alert | GPIO21 | BAT_ALERT | Fuel gauge alert |
-| Bell Signal | GPIO1 | ~BELL_SIGNAL | Doorbell button input |
-| Bell Mute | GPIO3 | BELL_OFF | Mute bell output |
-| Door Opener | GPIO2 | OPEN_BUZZER | Door buzzer control |
-| RF Power | GPIO10 | RF_PWR_EN | RFM69 power enable |
+| Bell Signal | GPIO13 | ~BELL_SIGNAL | Doorbell button input |
+| Bell Mute | GPIO12 | BELL_OFF | G3VM-63ER control |
+| Door Opener | GPIO14 | OPEN_BUZZER | G3VM-31DR control |
+| RF Power | GPIO33 | RF_PWR_EN | Wio-SX1262 LDO enable |
+| Charger CE | GPIO18 | CHG_CE | LTC4079 enable (active low) |
 
 ## Deep Sleep Configuration
 
 The system is configured for deep sleep to maximize battery life:
 
 1. **Wake-up triggers:**
-   - RFM69 interrupt on GPIO7 (packet received)
-   - Timer-based wake (every 5 minutes for status update)
+   - Wio-SX1262 DIO1 on GPIO6 (LoRa packet received)
+   - Bell signal on GPIO13 (doorbell pressed)
+   - Timer-based wake (every 60 seconds for status update)
 
 2. **Sleep behavior:**
-   - Enters deep sleep after 30 seconds of inactivity
-   - Prevents sleep when handling doorbell press or RF packet
-   - Configurable via Home Assistant
+   - TPS63900 maintains 3.3V rail with <400nA quiescent
+   - ESP32-C6 enters deep sleep between wake events
+   - Configurable sleep duration via Home Assistant
 
 3. **Power consumption:**
-   - Active: ~80mA (WiFi on)
-   - Deep sleep: <1mA
+   - Active: ~25mA (WiFi on)
+   - Deep sleep: <10uA (TPS63900 quiescent)
 
 ## Setup Instructions
 
@@ -208,7 +183,7 @@ The system is configured for deep sleep to maximize battery life:
    - WiFi SSID and password
    - API encryption key
    - OTA password
-   - RF encryption key (exactly 16 characters)
+   - LoRa encryption key (if using encryption)
 
 3. **Compile and upload:**
    ```bash
@@ -221,9 +196,9 @@ The system is configured for deep sleep to maximize battery life:
    esphome logs doorbell.yaml
    ```
 
-## RF Remote Pairing
+## LoRa Remote Pairing (Pending SX1262 Component)
 
-To pair a new RF remote:
+To pair a new LoRa remote:
 
 1. Call the service in Home Assistant:
    ```yaml
@@ -244,12 +219,9 @@ To pair a new RF remote:
 Once configured, the following entities will be available in Home Assistant:
 
 **Sensors:**
-- Bus Voltage
-- Battery Voltage (from charger and fuel gauge)
+- Battery Voltage (from fuel gauge)
 - Battery Percentage
 - Battery Current
-- Charge Current
-- System Voltage
 - Battery Temperature
 - Time to Empty
 - Time to Full
@@ -265,75 +237,55 @@ Once configured, the following entities will be available in Home Assistant:
 - Door Opener
 - RF Power Enable
 
-**Text Sensors:**
-- Charger Status
-- Charger Fault
-- ESPHome Version
-
 **Buttons:**
 - Restart
 - Trigger Deep Sleep
-- Prevent Deep Sleep
 
 **Events:**
 - esphome.doorbell_ring
 
 ## Troubleshooting
 
-### BQ25628E not responding
-- Check I2C connections (SDA1=GPIO8, SCL1=GPIO9)
-- Verify I2C address (default 0x6B)
-- Check power supply to BQ25628E
-
 ### MAX17260 not responding
-- Check I2C connections (SDA2=GPIO5, SCL2=GPIO6)
+- Check I2C connections (SDA2=GPIO36, SCL2=GPIO35)
 - Verify I2C address (default 0x36)
 - Check battery connection
 
-### RFM69 not working
+### Wio-SX1262 not working (once component exists)
 - Verify SPI connections
-- Check reset pin connection
+- Check reset pin connection (GPIO7)
+- Check BUSY pin state (GPIO5)
 - Ensure antenna is properly connected
-- Verify frequency matches your region (868 MHz for EU)
-- Check encryption key is exactly 16 characters
+- Verify frequency matches your region (868 MHz for EU, 915 MHz for US)
 
 ### Deep sleep issues
-- Check wake-up pin configuration (GPIO7)
+- Check wake-up pin configuration (GPIO6 for LoRa, GPIO13 for bell)
 - Verify interrupt is properly connected
 - Monitor logs for sleep/wake events
 
-## Advanced Configuration
+### Charger not working
+- Check CE pin state (GPIO18 should be LOW to enable)
+- Verify ISL23315 digital potentiometer is responding on I2C
+- Check VBUS input voltage
 
-### Custom Charge Parameters
+## Hardware Revision Compatibility
 
-Adjust charging for different battery types:
-
-```yaml
-bq25628e:
-  charge_current_limit: 0.8    # For 800mAh battery
-  charge_voltage_limit: 4.35   # For Li-HV batteries
-  input_current_limit: 1.0     # For 1A wall adapter
-```
-
-### RF Network Configuration
-
-Create multiple networks:
-
-```yaml
-rfm69:
-  network_id: 200              # Different network
-  node_id: 5                   # Different node
-  frequency: 915.0             # US ISM band
-  is_high_power: true          # If using RFM69HW
-```
+| Component | Rev2 (ESP32-S2) | Rev3 (ESP32-C6) |
+|-----------|-----------------|-----------------|
+| bq25628e/ | Working | N/A (use LTC4079) |
+| max17260/ | Working | Working |
+| rfm69/ | Working | N/A (use SX1262) |
+| ltc4079/ | N/A | Pending |
+| sx1262/ | N/A | Pending |
 
 ## References
 
-- [BQ25628E Datasheet](https://www.ti.com/lit/gpn/bq25628e)
+- [LTC4079 Datasheet](https://www.analog.com/en/products/ltc4079.html)
 - [MAX17260 Datasheet](https://www.analog.com/en/products/max17260.html)
-- [RFM69 Datasheet](https://www.hoperf.com/modules/rf_transceiver/RFM69W.html)
+- [SX1262 Datasheet](https://www.semtech.com/products/wireless-rf/lora-connect/sx1262)
+- [Wio-SX1262 Wiki](https://wiki.seeedstudio.com/Wio-SX1262/)
+- [ESP32-C6 Documentation](https://www.espressif.com/en/products/socs/esp32-c6)
 - [ESPHome Documentation](https://esphome.io)
-- [ESP32-S2 Documentation](https://www.espressif.com/en/products/socs/esp32-s2)
 
 ## License
 
