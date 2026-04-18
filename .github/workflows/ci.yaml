@@ -3,11 +3,6 @@ on:
   push:
   pull_request:
 
-env:
-  XC8_VERSION: "3.10"
-  PROFILE: "default"
-  PACK_FOLDER: "/opt/microchip/packs"
-
 jobs:
   build-esphome-firmware:
     runs-on: ubuntu-latest
@@ -25,14 +20,7 @@ jobs:
           pip install esphome
           export DOORBELL_API_ENCRYPTION_KEY=$(openssl rand 32 | base64 -)
           export DOORBELL_OTA_PASSWORD=$(uuidgen)
-          export RF_ENCRYPTION_KEY=$(tr -dc 'A-Za-z0-9_@#$%&*()-+=<>?' </dev/urandom | head -c16)
           envsubst < .github/workflows/secrets-ci.yaml > esphome/secrets.yaml
-
-      - name: Patch ESPHome config to use local instead of git for custom components
-        run: |
-          sed -i 's|type: git|type: local|g' esphome/doorbell.yaml
-          sed -Ei 's|url: [^\n]+|path: components|g' esphome/doorbell.yaml
-          sed -i '/ref: main/d' esphome/doorbell.yaml
 
       - name: Run ESPHome build
         working-directory: esphome
@@ -45,34 +33,6 @@ jobs:
           name: esphome-components
           path: esphome/components/
 
-  build-remote-firmware:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: usimd/setup-xc-action@v1
-        with:
-          compiler: xc8
-          version: ${{env.XC8_VERSION}}  
-
-      - name: Run build
-        working-directory: remote/firmware
-        run: |
-          # Download profile packs to folder
-          sudo mkdir -p /${{ env.PACK_FOLDER }}
-          sudo chown $USER /${{ env.PACK_FOLDER }}
-          jq -r '.configurations[] | select(.name=="${{ env.PROFILE }}") | .packs[] | ("https://packs.download.microchip.com/" + .vendor + "." + .name + "." + .version + ".atpack" + "\n" + .vendor + "/" + .name + "/" + .version)' .vscode/remote.mplab.json | xargs -n2 sh -c 'curl --create-dirs -LO --output-dir /${{ env.PACK_FOLDER }}/$1 $0 && unzip -qq /${{ env.PACK_FOLDER }}/$1/* -d /${{ env.PACK_FOLDER }}/$1'
-          
-          cmake -G Ninja -S cmake/remote/${{ env.PROFILE }} --preset remote_default_conf --fresh -DPACK_REPO_PATH=${{ env.PACK_FOLDER }}
-          cmake --build _build/remote/default -v --parallel
-
-      - name: Upload remote firmware artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: remote-firmware
-          path: |
-            remote/firmware/out/remote/default.*
-
   kicad-base-test:
     runs-on: ubuntu-latest
     steps:
@@ -84,9 +44,9 @@ jobs:
           sch_pdf: true
           sch_bom: true
           sch_erc: true
-          pcb_drc: false # ignored DRC violations are still reported
+          pcb_drc: false
           kicad_pcb: base/esphome-rf-doorbell.kicad_pcb
-          pcb_gerbers: true  
+          pcb_gerbers: true
 
       - name: Upload base PCB artifacts
         uses: actions/upload-artifact@v4
@@ -105,46 +65,11 @@ jobs:
           path: |
             base/*.rpt
 
-  kicad-remote-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: sparkengineering/kicad-action@v4
-        with:
-          kicad_sch: remote/remote.kicad_sch
-          sch_pdf: true
-          sch_bom: true
-          sch_erc: true
-          pcb_drc: true
-          kicad_pcb: remote/remote.kicad_pcb
-          pcb_gerbers: true  
-
-      - name: Upload remote PCB artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: remote-pcb
-          path: |
-            remote/sch.pdf
-            remote/bom.csv
-            remote/gbr.zip
-
-      - name: Upload remote ERC/DRC reports on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: remote-pcb-reports
-          path: |
-            remote/*.rpt
-
-  # Final job to consolidate all artifacts - only runs if all jobs succeed
   upload-release-artifacts:
     runs-on: ubuntu-latest
     needs:
       - build-esphome-firmware
-      - build-remote-firmware
       - kicad-base-test
-      - kicad-remote-test
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4

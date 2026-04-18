@@ -5,5 +5,5 @@
     "mplab.clangd.path": "/opt/microchip/xc8/v3.10/bin/xc8-clangd",
     "C_Cpp.intelliSenseEngine": "disabled",
     "makefile.configureOnOpen": false,
-    "cmake.sourceDirectory": "/home/q425942/private/projects/esphome-rf-doorbell/remote/firmware/cmake/remote/default"
+    "cmake.sourceDirectory": "${workspaceFolder}/cmake/remote/default"
 }

@@ -88,6 +88,7 @@
  */
 
 #include "max17260.h"
+#include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
 
@@ -98,9 +99,20 @@ static const char *const TAG = "max17260";
 
 void MAX17260Component::setup() {
   ESP_LOGCONFIG(TAG, "Setting up MAX17260...");
+
+  // Preferences must exist before we try to restore learned parameters.
+  this->learned_params_pref_ = global_preferences->make_preference<LearnedParameters>(
+    fnv1_hash("max17260_learned"));
   
   // === STEP 0: Check POR bit (UG6595 Section 2, Step 0) ===
-  if (!this->check_por_bit_()) {
+  bool por_set;
+  if (!this->check_por_bit_(por_set)) {
+    ESP_LOGE(TAG, "Failed to read POR bit during setup");
+    this->mark_failed();
+    return;
+  }
+
+  if (!por_set) {
     // Already initialized, skip initialization
     ESP_LOGI(TAG, "MAX17260 already initialized (POR bit clear)");
     this->initialized_ = true;
@@ -182,102 +194,80 @@ void MAX17260Component::dump_config() {
   LOG_I2C_DEVICE(this);
   LOG_UPDATE_INTERVAL(this);
   
-  // Setup NVS preference for learned parameters (UG6595 Step 3.4)
-  this->learned_params_pref_ = global_preferences->make_preference<LearnedParameters>(
-    fnv1_hash("max17260_learned"));
-  
   if (this->is_failed()) {
     ESP_LOGE(TAG, "Communication with MAX17260 failed!");
   }
   
-  // Read and log device identification
   uint16_t dev_name;
-  if (this->read_register_word_(MAX17260_REG_DEVNAME, dev_name)) {
+  if ((this->device_name_sensor_ != nullptr || this->serial_number_sensor_ != nullptr) &&
+      this->read_register_word_(MAX17260_REG_DEVNAME, dev_name)) {
     ESP_LOGCONFIG(TAG, "  Device Name: 0x%04X", dev_name);
+
+    if (this->device_name_sensor_ != nullptr) {
+      char name_str[3];
+      name_str[0] = (dev_name >> 8) & 0xFF;
+      name_str[1] = dev_name & 0xFF;
+      name_str[2] = '\0';
+      this->device_name_sensor_->publish_state(name_str);
+    }
   }
-  
-  // Read 32-bit serial number from registers 0xD4-0xD5 (Table 16)
-  // Per MAX17260 datasheet Table 16: Serial number registers are shadowed by
-  // MaxPeakPower/SusPeakPower. Must clear Config2.AtRateEn (bit 10) AND Config2.DPEn (bit 15)
-  // to access the 128-bit serial number (we read first 32 bits: Word0 and Word1)
-  
-  // Save Config2 and temporarily disable both AtRateEn AND DPEn
-  uint16_t config2_orig;
-  bool config2_saved = this->read_register_word_(MAX17260_REG_CONFIG2, config2_orig);
-  ESP_LOGD(TAG, "SN Read: Config2 original = 0x%04X (DPEn=%d, AtRateEn=%d)", 
-           config2_orig, 
-           (config2_orig & 0x8000) ? 1 : 0,  // bit 15
-           (config2_orig & 0x0400) ? 1 : 0); // bit 10
-  
-  if (config2_saved) {
-    // Clear BOTH AtRateEn (bit 10) AND DPEn (bit 15) - BOTH must be 0
-    uint16_t config2_temp = config2_orig & ~0x8400;  // Clear bits 15 and 10
-    if (config2_temp != config2_orig) {
-      this->write_register_word_(MAX17260_REG_CONFIG2, config2_temp);
-      
-      // Verify the write worked
-      uint16_t config2_verify;
-      this->read_register_word_(MAX17260_REG_CONFIG2, config2_verify);
-      ESP_LOGD(TAG, "SN Read: Config2 modified = 0x%04X (DPEn=%d, AtRateEn=%d), verify = 0x%04X", 
-               config2_temp,
-               (config2_temp & 0x8000) ? 1 : 0,
-               (config2_temp & 0x0400) ? 1 : 0,
-               config2_verify);
-      
-      // Per app note: Poll Status2.SNReady (bit 7) until set
-      bool sn_ready = false;
-      for (int i = 0; i < 50; i++) {  // Poll for up to 500ms
-        uint16_t status2;
-        if (this->read_register_word_(MAX17260_REG_STATUS2, status2)) {
-          if (status2 & 0x0080) {  // Bit 7 = SNReady
+
+  if (this->serial_number_sensor_ != nullptr) {
+    // Serial number registers are shadowed by MaxPeakPower/SusPeakPower unless
+    // Config2.AtRateEn and Config2.DPEn are both cleared.
+    uint16_t config2_orig;
+    bool config2_saved = this->read_register_word_(MAX17260_REG_CONFIG2, config2_orig);
+    ESP_LOGD(TAG, "SN Read: Config2 original = 0x%04X (DPEn=%d, AtRateEn=%d)", config2_orig,
+             (config2_orig & 0x8000) ? 1 : 0, (config2_orig & 0x0400) ? 1 : 0);
+
+    if (config2_saved) {
+      uint16_t config2_temp = config2_orig & ~0x8400;
+      if (config2_temp != config2_orig) {
+        this->write_register_word_(MAX17260_REG_CONFIG2, config2_temp);
+
+        uint16_t config2_verify;
+        this->read_register_word_(MAX17260_REG_CONFIG2, config2_verify);
+        ESP_LOGD(TAG, "SN Read: Config2 modified = 0x%04X (DPEn=%d, AtRateEn=%d), verify = 0x%04X",
+                 config2_temp, (config2_temp & 0x8000) ? 1 : 0, (config2_temp & 0x0400) ? 1 : 0,
+                 config2_verify);
+
+        bool sn_ready = false;
+        for (int i = 0; i < 50; i++) {
+          uint16_t status2;
+          if (this->read_register_word_(MAX17260_REG_STATUS2, status2) && (status2 & 0x0080)) {
             sn_ready = true;
             ESP_LOGD(TAG, "SN Read: Status2.SNReady set after %dms (Status2=0x%04X)", i * 10, status2);
             break;
           }
+          delay(10);
         }
-        delay(10);
-      }
-      if (!sn_ready) {
-        ESP_LOGW(TAG, "SN Read: Timeout waiting for Status2.SNReady");
+        if (!sn_ready) {
+          ESP_LOGW(TAG, "SN Read: Timeout waiting for Status2.SNReady");
+        }
       }
     }
-  }
-  
-  // Now read serial number from 0xD4 (Word0) and 0xD5 (Word1)
-  uint16_t sn_word0, sn_word1;
-  if (this->read_register_word_(MAX17260_REG_SN_WORD0, sn_word0) &&
-      this->read_register_word_(MAX17260_REG_SN_WORD1, sn_word1)) {
-    ESP_LOGCONFIG(TAG, "  Serial Number: %04X%04X (raw: Word1=0x%04X, Word0=0x%04X)", 
-                  sn_word1, sn_word0, sn_word1, sn_word0);
-    
-    // Publish to text sensor if configured
-    if (this->serial_number_sensor_ != nullptr) {
+
+    uint16_t sn_word0, sn_word1;
+    if (this->read_register_word_(MAX17260_REG_SN_WORD0, sn_word0) &&
+        this->read_register_word_(MAX17260_REG_SN_WORD1, sn_word1)) {
+      ESP_LOGCONFIG(TAG, "  Serial Number: %04X%04X (raw: Word1=0x%04X, Word0=0x%04X)", sn_word1, sn_word0,
+                    sn_word1, sn_word0);
+
       char serial_str[9];
       snprintf(serial_str, sizeof(serial_str), "%04X%04X", sn_word1, sn_word0);
       this->serial_number_sensor_->publish_state(serial_str);
+    } else {
+      ESP_LOGW(TAG, "  Failed to read serial number from 0xD4/0xD5");
     }
-  } else {
-    ESP_LOGW(TAG, "  Failed to read serial number from 0xD4/0xD5");
-  }
-  
-  // IMPORTANT: Restore original Config2 to re-enable DPEn and AtRateEn
-  if (config2_saved) {
-    this->write_register_word_(MAX17260_REG_CONFIG2, config2_orig);
-    delay(20);  // Wait for shadow registers to revert
-    
-    // Verify restoration
-    uint16_t config2_restored;
-    this->read_register_word_(MAX17260_REG_CONFIG2, config2_restored);
-    ESP_LOGD(TAG, "SN Read: Config2 restored to 0x%04X, verify = 0x%04X", config2_orig, config2_restored);
-  }
-  
-  // Publish device name if configured
-  if (this->device_name_sensor_ != nullptr && this->read_register_word_(MAX17260_REG_DEVNAME, dev_name)) {
-    char name_str[3];
-    name_str[0] = (dev_name >> 8) & 0xFF;
-    name_str[1] = dev_name & 0xFF;
-    name_str[2] = '\0';
-    this->device_name_sensor_->publish_state(name_str);
+
+    if (config2_saved) {
+      this->write_register_word_(MAX17260_REG_CONFIG2, config2_orig);
+      delay(20);
+
+      uint16_t config2_restored;
+      this->read_register_word_(MAX17260_REG_CONFIG2, config2_restored);
+      ESP_LOGD(TAG, "SN Read: Config2 restored to 0x%04X, verify = 0x%04X", config2_orig, config2_restored);
+    }
   }
   
   ESP_LOGCONFIG(TAG, "  Battery Configuration:");
@@ -302,10 +292,18 @@ void MAX17260Component::update() {
   // === STEP 3.1: Periodic POR monitoring (UG6595 Section 3, Step 3.1) ===
   // Check if POR bit has been set (indicates unexpected reset)
   // If POR is set, re-run initialization sequence
-  if (this->initialized_ && this->check_por_bit_()) {
-    ESP_LOGW(TAG, "POR bit detected during monitoring - reinitializing fuel gauge");
-    this->setup();  // Re-run full initialization
-    return;  // Skip this update cycle
+  if (this->initialized_) {
+    bool por_set;
+    if (!this->check_por_bit_(por_set)) {
+      ESP_LOGW(TAG, "Skipping update because POR bit read failed");
+      return;
+    }
+
+    if (por_set) {
+      ESP_LOGW(TAG, "POR bit detected during monitoring - reinitializing fuel gauge");
+      this->setup();  // Re-run full initialization
+      return;  // Skip this update cycle
+    }
   }
   
   // Read and publish voltage (datasheet: 78.125µV per LSB)
@@ -486,16 +484,16 @@ bool MAX17260Component::write_and_verify_register(uint8_t reg, uint16_t value) {
   return false;
 }
 
-bool MAX17260Component::check_por_bit_() {
+bool MAX17260Component::check_por_bit_(bool &por_set) {
   // Step 0: Check if POR bit is set (UG6595 Section 2, Step 0)
   uint16_t status;
   if (!this->read_register_word_(MAX17260_REG_STATUS, status)) {
     ESP_LOGE(TAG, "Failed to read Status register");
-    return false;  // Assume not initialized if can't read
+    return false;
   }
   
   // Check bit 1 (POR bit)
-  bool por_set = (status & STATUS_POR_BIT) != 0;
+  por_set = (status & STATUS_POR_BIT) != 0;
   
   if (por_set) {
     ESP_LOGD(TAG, "POR bit is set (Status=0x%04X), initialization required", status);
@@ -503,7 +501,7 @@ bool MAX17260Component::check_por_bit_() {
     ESP_LOGD(TAG, "POR bit is clear (Status=0x%04X), already initialized", status);
   }
   
-  return por_set;
+  return true;
 }
 
 bool MAX17260Component::wait_for_dnr_clear_() {

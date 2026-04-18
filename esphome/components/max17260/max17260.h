@@ -195,7 +195,7 @@ class MAX17260Component : public PollingComponent, public i2c::I2CDevice {
   bool write_register_word_(uint8_t reg, uint16_t value);
   
   // Initialization helper functions (per UG6595)
-  bool check_por_bit_();
+  bool check_por_bit_(bool &por_set);
   bool wait_for_dnr_clear_();
   bool exit_hibernate_mode_(uint16_t &saved_hib_cfg);
   bool restore_hibernate_mode_(uint16_t hib_cfg);

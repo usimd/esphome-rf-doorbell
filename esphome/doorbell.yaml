@@ -3,45 +3,12 @@
 # =============================================================================
 # Hardware: ESP32-C6-MINI-1, LTC4079 charger, MAX17260 fuel gauge, Wio-SX1262
 # 
-# Rev3 Changes from Rev2:
-#   - MCU: ESP32-C6-MINI-1 (was ESP32-S2)
-#   - Charger: LTC4079 (was BQ25628E) - controlled via ISL23315 digipot
-#   - RF: Wio-SX1262 LoRa (was RFM69W)
-#   - Buck: TPS63900 (was TPS629206) - ultra-low quiescent current
+# Rev3 hardware summary:
+#   - MCU: ESP32-C6-MINI-1
+#   - Charger: LTC4079 controlled via ISL23315 digipot
+#   - RF: Wio-SX1262 LoRa via ESPHome's sx126x component
+#   - Buck: TPS63900 for ultra-low quiescent current
 #
-# =============================================================================
-# CHARGING CIRCUIT DESIGN NOTES (from schematic analysis):
-# =============================================================================
-# LTC4079 charge current: ~5.3mA (set by R8=47k on PROG pin)
-#   - Formula: IBAT = 250 × 1V / RPROG = 250/47000 ≈ 5.3mA
-#   - Low current intentional: system draws only 9-10mA from intercom transformer
-#
-# VINDPM (Input Voltage Dynamic Power Management) Control:
-#   - Circuit: VBUS → R5(820k) → CHG_EN → R6(120k) → ISL23315 wiper → GND
-#   - ISL23315TFRUZ-T7A: 100kΩ total resistance (T option), 256 taps
-#   - ISL23315 power-on default: wiper = 128 (mid-scale)
-#   - LTC4079 EN threshold: 1.190V (charging), 0.750V (shutdown)
-#
-# VINDPM Threshold Calculation:
-#   VEN = VBUS × (R6 + Rw) / (R5 + R6 + Rw)
-#   For VEN = 1.190V:
-#     Wiper=0 (Rw≈0Ω): VINDPM ≈ 9.3V (highest, most conservative)
-#     Wiper=128 (Rw≈50kΩ): VINDPM ≈ 7.0V (boot default)
-#     Wiper=255 (Rw≈100kΩ): VINDPM ≈ 5.6V (lowest, widest range)
-#
-# Lower wiper value = higher VINDPM threshold (charge only at high VBUS)
-# Higher wiper value = lower VINDPM threshold (charge at lower VBUS)
-#
-# GPIO7 Charge Override (via D3 Schottky diode):
-#   - GPIO7 → D3 anode → D3 cathode → CHG_EN
-#   - GPIO7 LOW: Forces CHG_EN low → disables charging (emergency override)
-#   - GPIO7 HIGH-Z (input): D3 blocks, CHG_EN controlled by VINDPM divider
-#   - D3 is NOT a status LED, it's a protection/control diode
-#
-# Status LEDs: D1, D5, D6, D7 are NOT GPIO-controlled
-#   - Connected via normally-open solder jumpers (JP1, JP3, JP4, JP5)
-#   - D1 (Red): ~CHRG status when JP1 bridged
-#   - Must close solder jumpers to enable LED indications
 # =============================================================================
 
 esphome:
@@ -49,19 +16,16 @@ esphome:
   friendly_name: Doorbell
   
   on_boot:
-    # Note: RF LDO power is controlled by physical slide switch SW2, not GPIO
-    # Note: LTC4079 charger enable is controlled by ISL23315 digipot wiper, not direct GPIO
     - priority: -100  # Runs last after all components initialized
       then:
-        - lambda: 'ESP_LOGI("boot", "Priority -100 boot handler starting");'
-        - script.execute: check_battery_status
         - script.execute: handle_boot_wakeup
 
 # =============================================================================
-# ESP32-C6 configuration (Rev3 hardware)
+# ESP32-C6 configuration (Rev3 custom hardware)
 # =============================================================================
 esp32:
-  board: esp32-c6-devkitc-1
+  board: esp32-c6-devkitm-1
+  variant: esp32c6
   framework:
     type: esp-idf
     version: recommended
@@ -71,20 +35,16 @@ esp32:
 # =============================================================================
 # Wake sources:
 #   1. GPIO4 (Bell Signal) - Doorbell pressed, stay awake 45s for user interaction
-#   2. GPIO3 (DIO1 Wio-SX1262) - LoRa packet received, process and quick sleep
-#   3. GPIO2 (BAT_ALERT MAX17260) - Battery alert, update sensor and quick sleep
-#   4. Timer (60s) - Periodic sync of HA state (bell mute switch)
+#   2. GPIO2 (BAT_ALERT MAX17260) - Battery alert, update sensor and quick sleep
+#   3. Timer (120s) - Periodic sync of HA state (bell mute switch)
 # Power target: TPS63900 provides <400nA quiescent, total deep sleep <10uA
 # =============================================================================
 deep_sleep:
   id: deep_sleep_control
-  sleep_duration: 60s  # Sleep for 60s between wakeups (configurable via HA)
-  # Multiple GPIO wakeup sources using esp32_ext1_wakeup (ESP32-C6)
+  sleep_duration: 120s
   esp32_ext1_wakeup:
     pins:
       - number: GPIO4   # Bell signal (active HIGH via optocoupler)
-        allow_other_uses: true
-      - number: GPIO3   # Wio-SX1262 DIO1 (active HIGH)
         allow_other_uses: true
       - number: GPIO2   # MAX17260 BAT_ALERT (active LOW, inverted)
         allow_other_uses: true
@@ -93,9 +53,8 @@ deep_sleep:
 
 # Enable logging
 logger:
-  level: DEBUG
-  hardware_uart: UART0
-  baud_rate: 115200
+  level: WARN
+  baud_rate: 0
 
 # Time component for timestamps
 time:
@@ -105,11 +64,6 @@ time:
 api:
   encryption:
     key: !secret doorbell_api_encryption_key
-  # Actions callable from Home Assistant
-  actions:
-    - action: open_door
-      then:
-        - switch.turn_on: door_opener
 
 ota:
   - platform: esphome
@@ -118,80 +72,70 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  fast_connect: true      # Skip AP scan on reconnect
-  output_power: 15dB      # Reduced from 20dB default - saves power
-
-  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  fast_connect: true
+  output_power: 15dB
   ap:
     ssid: "Doorbell Fallback Hotspot"
     password: !secret doorbell_ap_password
+    ap_timeout: 30s
+
+captive_portal:
 
 # =============================================================================
 # External Components
 # =============================================================================
-# MAX17260 fuel gauge component from the repository
-# Note: BQ25628E and RFM69 components are Rev2 only - not used in Rev3
 external_components:
   - source:
-      type: git
-      url: https://github.com/usimd/esphome-rf-doorbell
-      ref: main
-    components: [max17260]  # Only MAX17260 for Rev3
-    refresh: 1s
+      type: local
+      path: components
+    components: [max17260, doorbell_controller]
 
 # =============================================================================
-# I2C Bus Configuration
+# I2C Bus (shared by doorbell_controller and max17260)
 # =============================================================================
-# Single I2C bus shared by ISL23315 digipot (0x28) and MAX17260 fuel gauge (0x36)
 i2c:
-  id: i2c_bus
   sda: GPIO13
   scl: GPIO12
-  scan: true
-  frequency: 400kHz
+  frequency: 100kHz  # Lower frequency for weak pull-ups on PCB
 
 # =============================================================================
-# SPI Bus for Wio-SX1262 LoRa Module
+# SPI Bus (used by sx126x LoRa module)
 # =============================================================================
 spi:
-  - id: spi_bus
-    clk_pin: GPIO19
-    mosi_pin: GPIO21
-    miso_pin: GPIO20
+  clk_pin: GPIO19
+  mosi_pin: GPIO21
+  miso_pin: GPIO20
 
 # =============================================================================
 # Wio-SX1262 LoRa Transceiver (Rev3)
 # =============================================================================
-# Using native ESPHome sx126x component
-# Wio-SX1262 has TCXO, DIO2 controls RF switch
 sx126x:
   id: lora_transceiver
   cs_pin: GPIO18
   rst_pin: GPIO23
-  dio1_pin:
-    number: GPIO3
-    allow_other_uses: true
+  dio1_pin: GPIO3
   busy_pin: GPIO22
-  frequency: 868000000     # 868 MHz for EU ISM band (use 915000000 for US)
+  frequency: 868000000
   hw_version: sx1262
   modulation: LORA
-  pa_power: 14             # TX power in dBm
-  rf_switch: true          # DIO2 controls RF switch on Wio-SX1262
-  tcxo_voltage: 1_8V       # Wio-SX1262 has 1.8V TCXO
+  pa_power: 14
+  rf_switch: true
+  tcxo_voltage: 1_8V
   tcxo_delay: 5ms
   bandwidth: 125_0kHz
   spreading_factor: 7
   coding_rate: CR_4_5
   crc_enable: true
-  sync_value: [0x14, 0x24]  # Private network sync word
+  sync_value: [0x14, 0x24]
   preamble_size: 8
+  rx_start: false
   
   on_packet:
     then:
-      - lambda: |-
-          ESP_LOGI("lora", "Packet received: %s, RSSI: %.1f dBm, SNR: %.1f dB", 
-                   format_hex(x).c_str(), rssi, snr);
-      # Check for door open command (first byte = 0x01)
+      - logger.log:
+          format: "LoRa packet received: RSSI=%.1f dBm, SNR=%.1f dB"
+          args: ['rssi', 'snr']
+      # Door open command (0x01)
       - if:
           condition:
             lambda: 'return x.size() >= 1 && x[0] == 0x01;'
@@ -202,7 +146,7 @@ sx126x:
                 data:
                   title: "Doorbell"
                   message: "Door opened via LoRa remote"
-      # Check for doorbell ring notification from remote (first byte = 0x10)
+      # Doorbell ring from remote (0x10)
       - if:
           condition:
             lambda: 'return x.size() >= 1 && x[0] == 0x10;'
@@ -210,38 +154,94 @@ sx126x:
             - script.execute: handle_doorbell_press
 
 # =============================================================================
-# GPIO Outputs
+# Doorbell Controller Component
 # =============================================================================
-# Note: RF LDO power is controlled by physical slide switch SW2, not GPIO
-# Note: LTC4079 charger enable is controlled by ISL23315 digipot wiper + GPIO7 override
-# Note: GPIO7 charge override is controlled via switch, not output (see Switches section)
-output:
-  # VBUS sensing enable - controls Q1 gate to complete voltage divider
-  # When HIGH, Q1 (2N7002) turns ON, connecting R11 (100k) to GND
-  # This creates a voltage divider: VBUS -> R10 (1M) -> GPIO0 -> R11 (100k) -> GND
-  - platform: gpio
-    id: vbus_sense_enable
-    pin:
-      number: GPIO6
-      mode:
-        output: true
+# Manages:
+#   - ISL23315 digital potentiometer (I2C 0x28)
+#   - LTC4079 charger VINDPM control via voltage divider
+#   - Charge disable override via GPIO7
+#   - Supply voltage measurement via switchable divider
+#   - Charge current monitoring (from V_PROG / R_PROG)
+#   - Sleep duration configuration
+#
+# VINDPM Circuit: Supply → R5(820k) → CHG_EN → R6(120k) → ISL23315 wiper → GND
+# LTC4079 EN threshold: 1.190V (charge), 0.750V (shutdown)
+# Charge current: I_CHG = 250 * V_PROG / R_PROG (30k = ~10mA max)
+# =============================================================================
+doorbell_controller:
+  id: charger_controller
+  deep_sleep_id: deep_sleep_control
+  # ISL23315 digipot address
+  address: 0x28
+  # Voltage divider configuration (matches schematic)
+  r_high: 820000    # R5
+  r_low: 120000     # R6
+  digipot_resistance: 100000  # ISL23315T = 100kΩ
+  # Supply voltage divider ratio: (R5 + R3) / R3 = (1M + 100k) / 100k = 11.0
+  supply_divider_ratio: 11.0
+  # LTC4079 R_PROG for charge current calculation
+  r_prog: 30000     # R11 - sets max charge current to about 10mA
+  # Hardware pins
+  charge_disable_pin:
+    number: GPIO7
+    inverted: true
+  supply_sense_enable_pin: GPIO6  # Controls Q1 gate for voltage divider
+  supply_adc_pin: 0   # GPIO0 - supply voltage via divider
+  vprog_adc_pin: 1    # GPIO1 - LTC4079 charge programming voltage
+  # VINDPM threshold control (5.6V - 9.3V range)
+  vindpm_threshold:
+    name: "VINDPM Threshold"
+  # Sleep duration control
+  sleep_duration:
+    name: "Sleep Duration"
+  # Charging enable/disable switch
+  charging_enabled:
+    name: "Battery Charging Enable"
+    disabled_by_default: true
+  # Emergency charge override
+  charge_disable:
+    name: "Charge Disable Override"
+    disabled_by_default: true
+  # Supply voltage sensor (intercom transformer power) - diagnostic
+  supply_voltage:
+    name: "Supply Voltage"
+  # Charge current sensor (calculated from V_PROG / R_PROG)
+  charge_current:
+    name: "Charge Current"
+  # Charging status binary sensor
+  charging:
+    name: "Battery Charging"
+  # Diagnostic: current wiper value
+  wiper_value:
+    name: "Digipot Wiper Value"
+    disabled_by_default: true
+
+# =============================================================================
+# MAX17260 Fuel Gauge Component
+# =============================================================================
+# Only state_of_charge is primary; all others are diagnostic
+# =============================================================================
+max17260:
+  id: fuel_gauge
+  address: 0x36
+  update_interval: never
+  # Primary sensor - battery percentage for Home Assistant
+  state_of_charge:
+    name: "Battery Percentage"
 
 # =============================================================================
 # Binary Sensors
 # =============================================================================
 binary_sensor:
-  # Battery alert from MAX17260 fuel gauge
-  # ALRT pin is open-drain active-low (per MAX17260 datasheet page 23)
-  # No external pullup on PCB - using ESP32-C6 internal pullup (~45kΩ)
-  # Required to prevent floating input and false-positive interrupts
+  # Battery alert from MAX17260 fuel gauge (open-drain active-low)
   - platform: gpio
     name: "Battery Alert"
     id: battery_alert_pin
     disabled_by_default: true
     pin:
       number: GPIO2
-      mode: INPUT_PULLUP  # Required: MAX17260 ALRT is open-drain, needs pullup
-      inverted: true      # ALRT is active-low
+      mode: INPUT_PULLUP
+      inverted: true
       allow_other_uses: true
     on_press:
       then:
@@ -250,86 +250,41 @@ binary_sensor:
             data:
               message: "Doorbell battery low!"
         - logger.log: "Battery alert triggered"
-        - component.update: fuel_gauge
         - script.execute: handle_interrupt_wakeup
 
   # Doorbell button press detection (via LTV-354T optocoupler)
-  # Optocoupler output is active-high (pulls GPIO high when doorbell pressed)
-  # External 47k pulldown removed - using ESP32-C6 internal pulldown (~45kΩ)
   - platform: gpio
     name: "Bell Signal"
     id: bell_signal
     pin:
       number: GPIO4
-      mode: INPUT_PULLDOWN  # Required: optocoupler is open-collector, active-high
-      inverted: false       # Active-high: pressed = HIGH
+      mode: INPUT_PULLDOWN
+      inverted: false
       allow_other_uses: true
     on_press:
       then:
         - script.execute: handle_doorbell_press
-        - script.execute: extend_wake_time  # Keep awake for user interaction
-
-  # USB Power Detection - derived from VBUS voltage
-  # Updates when VBUS is measured (via script or button)
-  - platform: template
-    name: "USB Connected"
-    id: usb_connected
-    icon: "mdi:usb"
-    lambda: 'return id(vbus_voltage).state > 4.0;'
-
-  # Charging Status Detection - derived from V_PROG voltage
-  # LTC4079 PROG pin is ~1V during charging, lower when not charging
-  - platform: template
-    name: "Battery Charging"
-    id: battery_charging
-    icon: "mdi:battery-charging"
-    lambda: |-
-      // V_PROG is ~1V during active charging, very low when not charging
-      return id(vprog_voltage).state > 0.3;
+        - script.execute: extend_wake_time
 
 # =============================================================================
 # Switches
 # =============================================================================
 switch:
-  # Charge Override Control (GPIO7 → D3 → CHG_EN)
-  # ON = GPIO7 LOW = Force disable charging (emergency override)
-  # OFF = GPIO7 as input (high-Z) = Let VINDPM circuit control charging
-  # NOTE: This is NOT a status LED control - D3 is a protection diode!
-  - platform: gpio
-    name: "Charge Disable Override"
-    id: charge_disable_override
-    pin:
-      number: GPIO7
-      mode: OUTPUT
-      inverted: true  # Switch ON = GPIO LOW = disable charging
-    icon: "mdi:battery-off"
-    disabled_by_default: true
-    restore_mode: RESTORE_DEFAULT_OFF  # Default: let VINDPM control charging
-
-  # VBUS sensing enable control
-  # Turns ON Q1 MOSFET to complete voltage divider for VBUS measurement
-  - platform: output
-    name: "VBUS Sense Enable"
-    id: vbus_sense_switch
-    output: vbus_sense_enable
-    icon: "mdi:flash"
-    disabled_by_default: true
-
-  # Control for muting the bell (via G3VM-63ER PhotoMOS NC relay)
+  # Bell mute control (via G3VM-63ER PhotoMOS NC relay)
   - platform: gpio
     name: "Bell Mute"
     id: bell_off
     pin:
       number: GPIO5
       mode: OUTPUT
-    restore_mode: DISABLED  # Get state from HA, don't restore locally
+    restore_mode: DISABLED
   
-  # Control to trigger door buzzer/opener (via G3VM-31DR PhotoMOS NO relay)
+  # Door opener control (via G3VM-31DR PhotoMOS NO relay)
   - platform: gpio
     name: "Door Opener"
     id: door_opener
     pin:
-      number: GPIO14  # OPEN_BUZZER
+      number: GPIO14
       mode: OUTPUT
     restore_mode: RESTORE_DEFAULT_OFF
     on_turn_on:
@@ -337,45 +292,7 @@ switch:
         - delay: 5s
         - switch.turn_off: door_opener
 
-  # Battery charger VINDPM control via ISL23315 digipot
-  # This circuit controls the LTC4079 EN pin voltage via a resistor divider:
-  #   VBUS -> R5(820k) -> CHG_EN -> R6(120k) -> ISL23315 wiper -> GND
-  # The ISL23315 has RL=GND, RH=NC, so wiper resistance varies 0-10k to GND
-  # LTC4079 EN threshold is 1.190V for charging, 0.750V for shutdown
-  # 
-  # VINDPM Threshold Behavior:
-  #   Wiper=0 (min resistance): ~9.3V threshold (only charge at high voltage)
-  #   Wiper=255 (max resistance): ~8.7V threshold (charge at lower voltage)
-  # 
-  # ISL23315 Power-on default: 128 (mid-scale) = ~9.0V threshold
-  # 
-  # NOTE: GPIO7 can force-disable charging regardless of VINDPM setting
-  #       Use charge_disable_override switch for emergency shutdown
-  - platform: template
-    name: "Battery Charging Enable"
-    id: charging_enable_switch
-    disabled_by_default: true
-    icon: "mdi:battery-charging"
-    optimistic: true
-    restore_mode: RESTORE_DEFAULT_ON
-    turn_on_action:
-      - lambda: |-
-          // Set ISL23315 wiper to maximum (255) for lowest VINDPM threshold (~5.6V)
-          // This allows charging at the widest voltage range
-          uint8_t data[2] = {0x00, 255};  // Instruction byte + max wiper value
-          id(i2c_bus).write(0x28, data, 2);
-          ESP_LOGI("charger", "Charging enabled (wiper=255, VINDPM ~5.6V)");
-          // Also ensure GPIO7 override is released (set as input/high-Z)
-          // Note: The charge_disable_override switch handles this
-    turn_off_action:
-      - lambda: |-
-          // Set ISL23315 wiper to 0 for highest VINDPM threshold (~9.3V)
-          // Combined with low bus voltage, this effectively prevents charging
-          uint8_t data[2] = {0x00, 0};  // Instruction byte + min wiper value  
-          id(i2c_bus).write(0x28, data, 2);
-          ESP_LOGI("charger", "Charging restricted (wiper=0, VINDPM ~9.3V)");
-
-  # LoRa Pairing Mode - enable to allow new remotes to register
+  # LoRa Pairing Mode
   - platform: template
     name: "LoRa Pairing Mode"
     id: lora_pairing_mode
@@ -384,52 +301,10 @@ switch:
     restore_mode: RESTORE_DEFAULT_OFF
     on_turn_on:
       - logger.log: "LoRa pairing mode enabled"
-      # Auto-disable after 60 seconds for security
       - delay: 60s
       - switch.turn_off: lora_pairing_mode
     on_turn_off:
       - logger.log: "LoRa pairing mode disabled"
-
-# =============================================================================
-# MAX17260 Fuel Gauge Component
-# =============================================================================
-max17260:
-  id: fuel_gauge
-  address: 0x36
-  update_interval: 10s
-  voltage:
-    name: "Battery Voltage (Fuel Gauge)"
-    disabled_by_default: true
-  current:
-    name: "Battery Current"
-    disabled_by_default: true
-  state_of_charge:
-    name: "Battery Percentage"
-    disabled_by_default: true
-  remaining_capacity:
-    name: "Battery Remaining Capacity"
-    disabled_by_default: true
-  full_capacity:
-    name: "Battery Full Capacity"
-    disabled_by_default: true
-  cycle_count:
-    name: "Battery Cycle Count"
-    disabled_by_default: true
-  time_to_empty:
-    name: "Battery Time to Empty"
-    disabled_by_default: true
-  time_to_full:
-    name: "Battery Time to Full"
-    disabled_by_default: true
-  temperature:
-    name: "Battery Temperature"
-    disabled_by_default: true
-  device_name:
-    name: "Fuel Gauge Device Name"
-    disabled_by_default: true
-  serial_number:
-    name: "Fuel Gauge Serial Number"
-    disabled_by_default: true
 
 # =============================================================================
 # Sensors
@@ -439,172 +314,28 @@ sensor:
   - platform: wifi_signal
     name: "WiFi Signal"
     disabled_by_default: true
-    update_interval: 60s
+    update_interval: never
   
   # Uptime
   - platform: uptime
     name: "Uptime"
     disabled_by_default: true
-    update_interval: 60s
-
-  # VBUS Voltage Sensing via voltage divider
-  # Circuit: VBUS -> R10 (1M) -> GPIO0 -> R11 (100k) -> Q1 drain -> GND (when Q1 ON)
-  # Divider ratio: 100k / (1M + 100k) = 0.0909
-  # IMPORTANT: Must enable vbus_sense_enable (GPIO6) before reading!
-  # Use the "Measure VBUS Voltage" button or read_vbus_voltage script
-  - platform: adc
-    name: "VBUS Voltage"
-    id: vbus_voltage
-    pin: GPIO0
-    attenuation: 12db  # Full 0-3.3V range on ESP32-C6
-    update_interval: never  # Manual trigger only - must enable Q1 first
-    disabled_by_default: true
-    filters:
-      - multiply: 11.0  # Convert to actual VBUS voltage (divider ratio compensation)
-    unit_of_measurement: "V"
-    accuracy_decimals: 2
-    on_value:
-      then:
-        - output.turn_off: vbus_sense_enable  # Disable divider after reading to save power
-
-  # V_PROG Voltage Sensing - monitors LTC4079 charge current programming
-  # LTC4079 PROG pin maintains 1.190V during constant-current charging
-  # R8 (47k) between PROG and V_PROG isolates GPIO capacitance
-  # 
-  # Charge current calculation (from LTC4079 datasheet):
-  #   IBAT = 250 × VPROG / RPROG
-  #   With R8 = 47k (not a programming resistor, just isolation)
-  #   The actual RPROG sets charge current - need to verify schematic
-  #   If PROG tied directly to V_PROG via R8, effective RPROG ≈ 47k
-  #   → IBAT ≈ 250 × 1.19V / 47kΩ ≈ 5-6mA (trickle charge)
-  #
-  # This low charge current is intentional: the intercom transformer
-  # only provides 9-10mA, so we can't charge faster without bus dropout.
-  - platform: adc
-    name: "Charge Programming Voltage"
-    id: vprog_voltage
-    pin: GPIO1
-    attenuation: 12db
-    update_interval: 30s
-    disabled_by_default: true
-    unit_of_measurement: "V"
-    accuracy_decimals: 3
-
-
+    update_interval: never
 
 # =============================================================================
 # Text Sensors
 # =============================================================================
 text_sensor:
-  # Device info
   - platform: version
     name: "ESPHome Version"
     disabled_by_default: true
-
-# =============================================================================
-# Number Entities for Configuration
-# =============================================================================
-number:
-  # ISL23315 Digital Potentiometer - Controls LTC4079 VINDPM (Input Voltage Dynamic Power Management)
-  # This sets the minimum input voltage threshold for charging.
-  # Circuit: VBUS -> R5(820k) -> CHG_EN -> R6(120k) -> ISL23315 wiper(0-100k) -> GND
-  # 
-  # ISL23315TFRUZ-T7A specifications (from datasheet):
-  #   - "T option" = 100kΩ total resistance
-  #   - 256 taps (0-255)
-  #   - Power-on default: mid-scale (tap 128) = ~50kΩ
-  #   - Wiper resistance: ~70Ω typical @ 3.3V (adds to tap resistance)
-  #   - Volatile register: resets to 128 on power cycle
-  #
-  # LTC4079 EN thresholds (from datasheet):
-  #   VEN(REG) = 1.190V - charging starts when EN rises above this
-  #   VEN(SD) = 0.750V - shutdown when EN falls below this
-  #
-  # VINDPM Threshold Calculation:
-  #   VEN = VBUS × (R6 + Rw) / (R5 + R6 + Rw)
-  #   For VEN = 1.190V:
-  #     Wiper=0 (Rw≈0Ω): VINDPM ≈ 9.3V (highest, most conservative)
-  #     Wiper=128 (Rw≈50kΩ): VINDPM ≈ 7.0V (power-on default)
-  #     Wiper=255 (Rw≈100kΩ): VINDPM ≈ 5.6V (lowest, widest range)
-  #
-  # Lower voltage = charge at lower VBUS (higher wiper value)
-  # Higher voltage = only charge at high VBUS (lower wiper value)
-  - platform: template
-    name: "VINDPM Threshold"
-    id: vindpm_threshold
-    icon: mdi:flash-triangle-outline
-    unit_of_measurement: "V"
-    min_value: 5.6
-    max_value: 9.3
-    step: 0.1
-    initial_value: 7.0  # Corresponds to ISL23315 power-on default (wiper=128)
-    optimistic: true
-    restore_value: true
-    mode: slider
-    on_value:
-      then:
-        - lambda: |-
-            // Convert voltage threshold to ISL23315 wiper value
-            // VINDPM range: 5.6V (wiper=255) to 9.3V (wiper=0)
-            // Formula derived from voltage divider:
-            //   VEN = VBUS × (R6 + Rw) / (R5 + R6 + Rw)
-            //   Where R5=820k, R6=120k, Rw=wiper×(100k/255)
-            //   Solving for Rw: Rw = (VEN × R5 - VBUS × R6 + VEN × R6) / (VBUS - VEN)
-            //   With VEN=1.19V fixed, and VBUS=desired threshold
-            
-            float vbus = x;  // Desired VINDPM threshold voltage
-            float ven = 1.19;  // LTC4079 EN regulation voltage
-            float r5 = 820000.0;  // 820k
-            float r6 = 120000.0;  // 120k
-            
-            // Calculate required wiper resistance
-            // Rw = (VEN × (R5 + R6) - VBUS × R6) / (VBUS - VEN)
-            float rw = (ven * (r5 + r6) - vbus * r6) / (vbus - ven);
-            
-            // Clamp Rw to valid range (0 to 100k)
-            if (rw < 0) rw = 0;
-            if (rw > 100000) rw = 100000;
-            
-            // Convert resistance to wiper value (0-255)
-            // Wiper value = Rw / (100k / 255) = Rw × 255 / 100k
-            uint8_t wiper_value = static_cast<uint8_t>(rw * 255.0 / 100000.0);
-            
-            // Write to ISL23315 (I2C address 0x28)
-            uint8_t data[2] = {0x00, wiper_value};  // Instruction byte + data
-            auto result = id(i2c_bus).write(0x28, data, 2);
-            
-            if (result) {
-              ESP_LOGI("vindpm", "VINDPM threshold set to %.1fV (wiper=%d, Rw=%.0fΩ)", 
-                       vbus, wiper_value, rw);
-            } else {
-              ESP_LOGE("vindpm", "Failed to write to ISL23315");
-            }
-
-  - platform: template
-    name: "Sleep Duration"
-    id: sleep_duration_setting
-    icon: mdi:sleep
-    unit_of_measurement: "s"
-    min_value: 30
-    max_value: 300
-    step: 30
-    initial_value: 60  # Default 60s sleep cycle
-    optimistic: true
-    restore_value: true
-    mode: slider
-    on_value:
-      then:
-        - lambda: |-
-            auto sleep_time = static_cast<uint32_t>(x * 1000);  // Convert to ms
-            id(deep_sleep_control).set_sleep_duration(sleep_time);
-            ESP_LOGI("deep_sleep", "Sleep duration updated to %.0f seconds", x);
 
 # =============================================================================
 # Scripts
 # =============================================================================
 script:
   - id: handle_doorbell_press
-    mode: single  # Ignore re-triggers while running (debounce)
+    mode: single
     then:
       - homeassistant.event:
           event: esphome.doorbell_ring
@@ -616,43 +347,31 @@ script:
           data:
             title: "Doorbell"
             message: "Someone is at the door!"
-      # Cooldown period - ignore additional presses for 5 seconds
       - delay: 5s
   
-  - id: check_battery_status
-    then:
-      - component.update: fuel_gauge
-      - lambda: |-
-          ESP_LOGI("battery", "Battery status check completed");
-
-  # Deep sleep management scripts
   - id: handle_boot_wakeup
     then:
       - logger.log: "Boot/wakeup handler started"
       - lambda: |-
-          auto wakeup_cause = esp_sleep_get_wakeup_cause();
-          if (wakeup_cause == ESP_SLEEP_WAKEUP_EXT1) {
-            // Check which GPIO triggered the wakeup
-            uint64_t wakeup_pins = esp_sleep_get_ext1_wakeup_status();
-            if (wakeup_pins & (1ULL << 4)) {
-              ESP_LOGI("deep_sleep", "Woke from GPIO4 (doorbell press)");
+          // Use doorbell_controller static methods for wakeup detection
+          auto cause = doorbell_controller::DoorbellControllerComponent::get_wakeup_cause();
+          
+          if (cause == ESP_SLEEP_WAKEUP_EXT1) {
+            if (doorbell_controller::DoorbellControllerComponent::is_gpio_wakeup(4)) {
+              ESP_LOGI("wakeup", "Woke from GPIO4 (doorbell press)");
               id(extend_wake_time).execute();
-            } else if (wakeup_pins & (1ULL << 3)) {
-              ESP_LOGI("deep_sleep", "Woke from GPIO3 (LoRa packet)");
-              id(handle_interrupt_wakeup).execute();
-            } else if (wakeup_pins & (1ULL << 2)) {
-              ESP_LOGI("deep_sleep", "Woke from GPIO2 (battery alert)");
+            } else if (doorbell_controller::DoorbellControllerComponent::is_gpio_wakeup(2)) {
+              ESP_LOGI("wakeup", "Woke from GPIO2 (battery alert)");
               id(handle_interrupt_wakeup).execute();
             } else {
-              ESP_LOGI("deep_sleep", "Woke from unknown GPIO: 0x%llx", wakeup_pins);
+              ESP_LOGI("wakeup", "Woke from unknown GPIO");
               id(quick_sync_and_sleep).execute();
             }
-          } else if (wakeup_cause == ESP_SLEEP_WAKEUP_TIMER) {
-            ESP_LOGI("deep_sleep", "Woke up from timer (periodic sync)");
+          } else if (cause == ESP_SLEEP_WAKEUP_TIMER) {
+            ESP_LOGI("wakeup", "Woke up from timer");
             id(quick_sync_and_sleep).execute();
           } else {
-            // Cold boot - execute OTA window script (120s awake, then sleep)
-            ESP_LOGI("deep_sleep", "Cold boot detected - starting OTA window");
+            ESP_LOGI("wakeup", "Cold boot - starting OTA window");
             id(cold_boot_ota_window).execute();
           }
 
@@ -661,11 +380,11 @@ script:
       - deep_sleep.prevent: deep_sleep_control
       - logger.log: "Interrupt wakeup - updating sensors"
       - component.update: fuel_gauge
-      - delay: 8s  # Wait for WiFi + HA update
+      - delay: 8s
       - deep_sleep.enter: deep_sleep_control
 
   - id: extend_wake_time
-    mode: restart  # Reset timer if called again
+    mode: restart
     then:
       - deep_sleep.prevent: deep_sleep_control
       - logger.log: "Extended wake time for 45s (user interaction)"
@@ -675,6 +394,7 @@ script:
   - id: cold_boot_ota_window
     then:
       - deep_sleep.prevent: deep_sleep_control
+      - component.update: fuel_gauge
       - logger.log: "Cold boot - OTA window open for 120s"
       - delay: 120s
       - deep_sleep.enter: deep_sleep_control
@@ -683,33 +403,9 @@ script:
     then:
       - deep_sleep.prevent: deep_sleep_control
       - logger.log: "Quick sync wake (8s for WiFi + HA state)"
-      - delay: 8s  # WiFi needs 2-5s, allow margin for state sync
+      - component.update: fuel_gauge
+      - delay: 8s
       - deep_sleep.enter: deep_sleep_control
-
-  # Script to properly read VBUS voltage with divider enabled
-  - id: read_vbus_voltage
-    then:
-      - output.turn_on: vbus_sense_enable  # Enable Q1 to complete voltage divider
-      - delay: 10ms  # Allow ADC settling time
-      - component.update: vbus_voltage     # Read ADC (will auto-disable Q1 after)
-      - component.update: vprog_voltage    # Also read V_PROG to update charging status
-      - logger.log:
-          format: "VBUS: %.2f V, V_PROG: %.3f V, USB: %s, Charging: %s"
-          args:
-            - 'id(vbus_voltage).state'
-            - 'id(vprog_voltage).state'
-            - 'id(usb_connected).state ? "yes" : "no"'
-            - 'id(battery_charging).state ? "yes" : "no"'
-
-# =============================================================================
-# Interval - Periodic Tasks
-# =============================================================================
-interval:
-  # Periodically check USB connection and charging status
-  # Only runs when device is awake (not during deep sleep)
-  - interval: 30s
-    then:
-      - script.execute: read_vbus_voltage
 
 # =============================================================================
 # Buttons
@@ -720,33 +416,13 @@ button:
     disabled_by_default: true
 
   - platform: template
-    name: "Read ISL23315 Wiper"
-    id: read_digipot_button
-    disabled_by_default: true
-    icon: "mdi:resistor"
-    on_press:
-      then:
-        - lambda: |-
-            // Read current wiper value from ISL23315
-            // Read instruction: send 0x00, then read 1 byte
-            uint8_t cmd = 0x00;
-            uint8_t value;
-            if (id(i2c_bus).write(0x28, &cmd, 1) && id(i2c_bus).read(0x28, &value, 1)) {
-              ESP_LOGI("isl23315", "Current wiper value: %d", value);
-            } else {
-              ESP_LOGE("isl23315", "Failed to read from ISL23315");
-            }
-
-  - platform: template
-    name: "Measure VBUS Voltage"
-    id: measure_vbus_button
+    name: "Measure Supply Voltage"
+    id: measure_supply_button
     disabled_by_default: true
     icon: "mdi:flash"
     on_press:
       then:
-        - output.turn_on: vbus_sense_enable  # Enable voltage divider
-        - delay: 10ms  # Allow settling time
-        - component.update: vbus_voltage     # Trigger ADC read (will auto-disable after)
+        - component.update: charger_controller
 
   - platform: template
     name: "Transmit LoRa Test Packet"
@@ -755,4 +431,4 @@ button:
     icon: "mdi:radio"
     on_press:
       - sx126x.send_packet:
-          data: [0xFF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]  # Test packet
+          data: [0xFF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]
