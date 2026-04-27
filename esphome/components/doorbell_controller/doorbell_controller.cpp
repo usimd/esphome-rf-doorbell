@@ -5,8 +5,6 @@
 #ifdef USE_ESP32
 #include "esp_sleep.h"
 #include "esp_adc/adc_oneshot.h"
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h"
 #endif
 
 namespace esphome {
@@ -223,10 +221,9 @@ float DoorbellControllerComponent::read_adc_voltage_(uint8_t pin) {
     adc_oneshot_del_unit(adc_handle);
     return NAN;
   }
-  
+
   adc_oneshot_del_unit(adc_handle);
-  
-  // Convert to voltage (12-bit ADC, 3.3V reference with 12dB attenuation)
+
   return (static_cast<float>(raw_value) / 4095.0f) * 3.3f;
 }
 #endif
@@ -332,6 +329,10 @@ esp_sleep_wakeup_cause_t DoorbellControllerComponent::get_wakeup_cause() {
 
 uint64_t DoorbellControllerComponent::get_ext1_wakeup_pins() {
   return esp_sleep_get_ext1_wakeup_status();
+}
+
+uint64_t DoorbellControllerComponent::get_gpio_wakeup_pins() {
+  return esp_sleep_get_gpio_wakeup_status();
 }
 
 bool DoorbellControllerComponent::is_gpio_wakeup(uint8_t gpio) {
@@ -453,6 +454,84 @@ void ChargeDisableSwitch::dump_config() {
 void ChargeDisableSwitch::write_state(bool state) {
   this->parent_->set_charge_override(state);
   this->publish_state(state);
+}
+
+// =============================================================================
+// BellMuteSwitch Implementation
+// =============================================================================
+
+void BellMuteSwitch::setup() {
+  if (this->pin_ == nullptr) {
+    ESP_LOGE(TAG, "Bell mute pin not configured");
+    this->mark_failed();
+    return;
+  }
+
+  bool initial_state = false;
+  auto restored_state = this->get_initial_state_with_restore_mode();
+  if (restored_state.has_value()) {
+    initial_state = restored_state.value();
+  }
+
+  this->pin_->setup();
+  this->pin_->pin_mode(gpio::FLAG_OUTPUT);
+  this->release_hold_(initial_state);
+
+  this->apply_output_(initial_state);
+  this->publish_state(initial_state);
+}
+
+void BellMuteSwitch::dump_config() {
+  LOG_SWITCH("", "Bell Mute", this);
+  if (this->pin_ != nullptr) {
+    LOG_PIN("  Pin: ", this->pin_);
+  }
+}
+
+void BellMuteSwitch::on_safe_shutdown() {
+  if (this->pin_ == nullptr) {
+    return;
+  }
+
+  this->apply_output_(this->state);
+  this->enable_hold_();
+}
+
+void BellMuteSwitch::write_state(bool state) {
+  if (this->pin_ == nullptr) {
+    return;
+  }
+
+  this->release_hold_(state);
+  this->apply_output_(state);
+  this->publish_state(state);
+}
+
+void BellMuteSwitch::apply_output_(bool state) {
+  this->pin_->pin_mode(gpio::FLAG_OUTPUT);
+  this->pin_->digital_write(state);
+}
+
+void BellMuteSwitch::enable_hold_() {
+#ifdef USE_ESP32
+  auto gpio_num = static_cast<gpio_num_t>(this->pin_->get_pin());
+  gpio_hold_en(gpio_num);
+#if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
+  gpio_deep_sleep_hold_en();
+#endif
+#endif
+}
+
+void BellMuteSwitch::release_hold_(bool state) {
+#ifdef USE_ESP32
+#if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
+  gpio_deep_sleep_hold_dis();
+#endif
+  auto gpio_num = static_cast<gpio_num_t>(this->pin_->get_pin());
+  this->pin_->pin_mode(gpio::FLAG_OUTPUT);
+  this->pin_->digital_write(state);
+  gpio_hold_dis(gpio_num);
+#endif
 }
 
 }  // namespace doorbell_controller

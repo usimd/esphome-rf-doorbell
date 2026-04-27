@@ -12,6 +12,7 @@
 #ifdef USE_ESP32
 #include "esp_sleep.h"
 #include "esp_adc/adc_oneshot.h"
+#include "driver/gpio.h"
 #endif
 
 namespace esphome {
@@ -23,7 +24,7 @@ class DoorbellControllerComponent;
 // =============================================================================
 // ISL23315 Digital Potentiometer Constants
 // =============================================================================
-static const uint8_t ISL23315_DEFAULT_ADDRESS = 0x28;
+static const uint8_t ISL23315_DEFAULT_ADDRESS = 0x50;
 static const uint8_t ISL23315_WIPER_INSTRUCTION = 0x00;
 static const uint8_t ISL23315_WIPER_DEFAULT = 128;
 static const uint8_t ISL23315_WIPER_MIN = 0;
@@ -90,6 +91,26 @@ class ChargeDisableSwitch : public switch_::Switch, public Component {
  protected:
   void write_state(bool state) override;
   DoorbellControllerComponent *parent_{nullptr};
+};
+
+// =============================================================================
+// Bell Mute Switch Component
+// =============================================================================
+class BellMuteSwitch : public switch_::Switch, public Component {
+ public:
+  void set_pin(InternalGPIOPin *pin) { this->pin_ = pin; }
+  void setup() override;
+  void dump_config() override;
+  float get_setup_priority() const override { return setup_priority::HARDWARE; }
+  void on_safe_shutdown() override;
+
+ protected:
+  void write_state(bool state) override;
+  void apply_output_(bool state);
+  void enable_hold_();
+  void release_hold_(bool state);
+
+  InternalGPIOPin *pin_{nullptr};
 };
 
 // =============================================================================
@@ -215,6 +236,7 @@ class DoorbellControllerComponent : public PollingComponent, public i2c::I2CDevi
 #ifdef USE_ESP32
   static esp_sleep_wakeup_cause_t get_wakeup_cause();
   static uint64_t get_ext1_wakeup_pins();
+  static uint64_t get_gpio_wakeup_pins();
   static bool is_gpio_wakeup(uint8_t gpio);
 #endif
 
@@ -242,7 +264,7 @@ class DoorbellControllerComponent : public PollingComponent, public i2c::I2CDevi
   
   // Deep sleep reference
   deep_sleep::DeepSleepComponent *deep_sleep_{nullptr};
-  uint32_t sleep_duration_{60};  // Default 60s
+  uint32_t sleep_duration_{120};  // Match the firmware deep_sleep default
 
   // Sub-components
   VINDPMThresholdNumber *vindpm_threshold_number_{nullptr};

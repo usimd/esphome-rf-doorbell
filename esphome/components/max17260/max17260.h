@@ -125,8 +125,18 @@ static const uint8_t MAX17260_REG_SN_WORD1 = 0xD5;  // Serial Number Word1 (SusP
 
 // Status register bit masks
 static const uint16_t STATUS_POR_BIT = 0x0002;  // Power-On Reset bit (bit 1)
+static const uint16_t STATUS_IMN_BIT = 0x0004;  // Minimum current threshold exceeded
+static const uint16_t STATUS_BST_BIT = 0x0008;  // Battery present/absent state
+static const uint16_t STATUS_IMX_BIT = 0x0040;  // Maximum current threshold exceeded
+static const uint16_t STATUS_DSOCI_BIT = 0x0080;  // 1% SOC change interrupt
+static const uint16_t STATUS_VMN_BIT = 0x0100;  // Minimum voltage threshold exceeded
+static const uint16_t STATUS_TMN_BIT = 0x0200;  // Minimum temperature threshold exceeded
+static const uint16_t STATUS_SMN_BIT = 0x0400;  // Minimum SOC threshold exceeded
 static const uint16_t STATUS_BR_BIT = 0x8000;   // Battery removal
 static const uint16_t STATUS_BI_BIT = 0x0800;   // Battery insertion
+static const uint16_t STATUS_VMX_BIT = 0x1000;  // Maximum voltage threshold exceeded
+static const uint16_t STATUS_TMX_BIT = 0x2000;  // Maximum temperature threshold exceeded
+static const uint16_t STATUS_SMX_BIT = 0x4000;  // Maximum SOC threshold exceeded
 
 // FSTAT register bit masks
 static const uint16_t FSTAT_DNR_BIT = 0x0001;   // Data Not Ready bit (bit 0)
@@ -137,16 +147,16 @@ static const uint16_t MODELCFG_VCHG_BIT = 0x0400;     // VChg bit (bit 10) - set
 
 // Scaling factors from datasheet Table 3
 static const float VCELL_SCALE = 0.078125e-3f;         // 78.125µV per LSB
-static const float CURRENT_SCALE = 1.5625e-6f / 0.025f; // 1.5625μV/RSENSE, RSENSE=25mΩ -> 62.5μA per LSB
-static const float CAPACITY_SCALE = (5.0e-6f / 0.025f) * 1000.0f;  // 5μVh/RSENSE, RSENSE=25mΩ -> 0.2mAh per LSB  
+static const float CURRENT_SCALE = 1.5625e-6f / 0.015f; // 1.5625μV/RSENSE, RSENSE=15mΩ -> 104.1667μA per LSB
+static const float CAPACITY_SCALE = (5.0e-6f / 0.015f) * 1000.0f;  // 5μVh/RSENSE, RSENSE=15mΩ -> 0.3333mAh per LSB
 static const float PERCENT_SCALE = 1.0f / 256.0f;      // 1/256% per LSB (full 16-bit resolution)
 static const float TIME_SCALE = 5.625f;                // 5.625s per LSB
 static const float TEMP_SCALE = 1.0f / 256.0f;         // 1/256°C per LSB
 static const float CYCLES_SCALE = 1.0f / 100.0f;       // 1% cycle per LSB
 
 // Battery configuration
-static const uint16_t DESIGN_CAP = 1650;  // 330mAh / (5μVh/25mΩ) = 1650
-static const uint16_t ICHG_TERM = 320;    // 20mA × 25mΩ / 1.5625μV = 320
+static const uint16_t DESIGN_CAP = 990;  // 330mAh / (5μVh/15mΩ) = 990
+static const uint16_t ICHG_TERM = 192;   // 20mA × 15mΩ / 1.5625μV = 192
 static const uint16_t VEMPTY = 0xA561;    // VE=3.3V, VR=3.88V (default for Li-ion)
 
 class MAX17260Component : public PollingComponent, public i2c::I2CDevice {
@@ -175,6 +185,10 @@ class MAX17260Component : public PollingComponent, public i2c::I2CDevice {
   
   // Write and verify register with retry (per UG6595 WriteAndVerifyRegister)
   bool write_and_verify_register(uint8_t reg, uint16_t value);
+
+  // Alert diagnostics and recovery helpers for ALRT wake investigation.
+  bool dump_alert_diagnostics();
+  bool clear_alert_flags();
 
  protected:
   sensor::Sensor *voltage_sensor_{nullptr};
@@ -223,6 +237,7 @@ class MAX17260Component : public PollingComponent, public i2c::I2CDevice {
   bool load_learned_parameters_();
   bool save_learned_parameters_();
   uint32_t calculate_checksum_(const LearnedParameters &params);
+  void log_status_register_(const char *prefix, uint16_t status);
 };
 
 }  // namespace max17260

@@ -27,6 +27,18 @@ There is no supported legacy firmware configuration in this directory anymore.
 esphome compile doorbell.yaml
 ```
 
+## OTA Recovery Helper
+
+When the installed node is only reachable during short wake windows, use the repo-local helper to press the ESPHome `Restart` button over the native API and force the device into its existing `cold_boot_ota_window`.
+
+```bash
+../.venv/bin/python restart_into_ota_window.py --restart
+```
+
+Without `--restart`, the helper only prints the live device metadata and available button entities.
+Add `--wait-timeout 180` if you want it to keep polling through the current deep-sleep cycle until the device wakes up.
+The helper prefers `esphome-rf-doorbell.local` by default because the active firmware does not currently configure a fixed `manual_ip`.
+
 ## Runtime Notes
 
 - `doorbell_controller` updates the real `deep_sleep` component sleep duration at runtime.

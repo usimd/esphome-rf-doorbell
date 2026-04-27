@@ -57,10 +57,10 @@
  * 
  * REGISTER UNITS (per UG6597 Tables 3-4):
  * =======================================
- * Capacity: 5.0μVh / RSENSE per LSB (with 25mΩ: 0.2mAh per LSB)
+ * Capacity: 5.0μVh / RSENSE per LSB (with 15mΩ: 0.3333mAh per LSB)
  * SOC: 1/256% per LSB (full 16-bit resolution)
  * Voltage: 1.25mV/16 = 0.078125mV per LSB
- * Current: 1.5625μV / RSENSE per LSB (with 25mΩ: 62.5μA per LSB)
+ * Current: 1.5625μV / RSENSE per LSB (with 15mΩ: 104.1667μA per LSB)
  * Temperature: 1/256°C per LSB (signed)
  * Time: 5.625s per LSB
  * Cycles: 1% per LSB (0-655.35 range)
@@ -78,7 +78,7 @@
  * BATTERY CONFIGURATION:
  * =====================
  * - Design Capacity: 330mAh
- * - Sense Resistor: 25mΩ
+ * - Sense Resistor: 15mΩ
  * - Charge Termination: 20mA
  * - Empty Voltage: 3.3V (recovery at 3.88V)
  * - Charge Voltage: 4.2V (standard Li-ion)
@@ -316,11 +316,11 @@ void MAX17260Component::update() {
     }
   }
   
-  // Read and publish current (datasheet: 1.5625μV/RSENSE per LSB, RSENSE=25mΩ)
+  // Read and publish current (datasheet: 1.5625μV/RSENSE per LSB, RSENSE=15mΩ)
   if (this->current_sensor_ != nullptr) {
     uint16_t raw_current;
     if (this->read_register_word_(MAX17260_REG_AVGCURRENT, raw_current)) {
-      // Signed 16-bit value: 1.5625μV / 25mΩ = 0.0625mA = 0.0000625A per LSB
+      // Signed 16-bit value: 1.5625μV / 15mΩ = 0.1041667mA = 0.0001041667A per LSB
       int16_t signed_current = static_cast<int16_t>(raw_current);
       float current = signed_current * CURRENT_SCALE;
       this->current_sensor_->publish_state(current);
@@ -343,7 +343,7 @@ void MAX17260Component::update() {
   if (this->remaining_capacity_sensor_ != nullptr) {
     uint16_t raw_repcap;
     if (this->read_register_word_(MAX17260_REG_REPCAP, raw_repcap)) {
-      float capacity = raw_repcap * CAPACITY_SCALE;  // 5μVh/RSENSE, RSENSE=25mΩ -> 0.2mAh/LSB
+      float capacity = raw_repcap * CAPACITY_SCALE;  // 5μVh/RSENSE, RSENSE=15mΩ -> 0.3333mAh/LSB
       this->remaining_capacity_sensor_->publish_state(capacity);
       ESP_LOGD(TAG, "Remaining Capacity: %.1f mAh (raw 0x%04X)", capacity, raw_repcap);
     }
@@ -484,6 +484,81 @@ bool MAX17260Component::write_and_verify_register(uint8_t reg, uint16_t value) {
   return false;
 }
 
+bool MAX17260Component::dump_alert_diagnostics() {
+  uint16_t status;
+  if (!this->read_register_word_(MAX17260_REG_STATUS, status)) {
+    ESP_LOGW(TAG, "Failed to read Status register for alert diagnostics");
+    return false;
+  }
+
+  uint16_t config;
+  if (!this->read_register_word_(MAX17260_REG_CONFIG, config)) {
+    ESP_LOGW(TAG, "Failed to read Config register for alert diagnostics");
+    return false;
+  }
+
+  uint16_t config2;
+  if (!this->read_register_word_(MAX17260_REG_CONFIG2, config2)) {
+    ESP_LOGW(TAG, "Failed to read Config2 register for alert diagnostics");
+    return false;
+  }
+
+  this->log_status_register_("Alert diagnostics", status);
+  ESP_LOGI(TAG,
+           "Alert config: Config=0x%04X (Aen=%d Bei=%d Ber=%d SS=%d TS=%d VS=%d IS=%d) "
+           "Config2=0x%04X (dSOCen=%d TAlrtEn=%d)",
+           config, (config & 0x0004) ? 1 : 0, (config & 0x0002) ? 1 : 0, (config & 0x0001) ? 1 : 0,
+           (config & 0x4000) ? 1 : 0, (config & 0x2000) ? 1 : 0, (config & 0x1000) ? 1 : 0,
+           (config & 0x0800) ? 1 : 0, config2, (config2 & 0x0100) ? 1 : 0, (config2 & 0x0080) ? 1 : 0);
+  return true;
+}
+
+bool MAX17260Component::clear_alert_flags() {
+  uint16_t status;
+  if (!this->read_register_word_(MAX17260_REG_STATUS, status)) {
+    ESP_LOGW(TAG, "Failed to read Status register before clearing alert flags");
+    return false;
+  }
+
+  const uint16_t clearable_mask = STATUS_DSOCI_BIT | STATUS_IMN_BIT | STATUS_IMX_BIT | STATUS_VMN_BIT |
+                                  STATUS_TMN_BIT | STATUS_SMN_BIT | STATUS_BI_BIT | STATUS_VMX_BIT |
+                                  STATUS_TMX_BIT | STATUS_SMX_BIT | STATUS_BR_BIT;
+  uint16_t new_status = status & ~clearable_mask;
+
+  this->log_status_register_("Alert flags before clear", status);
+
+  if (new_status == status) {
+    ESP_LOGI(TAG, "No clearable alert flags were set");
+    return true;
+  }
+
+  if (!this->write_and_verify_register(MAX17260_REG_STATUS, new_status)) {
+    ESP_LOGW(TAG, "Failed to clear alert flags (Status 0x%04X -> 0x%04X)", status, new_status);
+    return false;
+  }
+
+  uint16_t verified_status;
+  if (!this->read_register_word_(MAX17260_REG_STATUS, verified_status)) {
+    ESP_LOGW(TAG, "Failed to verify Status register after clearing alert flags");
+    return false;
+  }
+
+  this->log_status_register_("Alert flags after clear", verified_status);
+  return true;
+}
+
+void MAX17260Component::log_status_register_(const char *prefix, uint16_t status) {
+  ESP_LOGI(TAG,
+           "%s: Status=0x%04X [Br=%d Smx=%d Tmx=%d Vmx=%d Bi=%d Smn=%d Tmn=%d Vmn=%d dSOCi=%d Imx=%d Bst=%d Imn=%d POR=%d]",
+           prefix, status, (status & STATUS_BR_BIT) ? 1 : 0, (status & STATUS_SMX_BIT) ? 1 : 0,
+           (status & STATUS_TMX_BIT) ? 1 : 0, (status & STATUS_VMX_BIT) ? 1 : 0,
+           (status & STATUS_BI_BIT) ? 1 : 0, (status & STATUS_SMN_BIT) ? 1 : 0,
+           (status & STATUS_TMN_BIT) ? 1 : 0, (status & STATUS_VMN_BIT) ? 1 : 0,
+           (status & STATUS_DSOCI_BIT) ? 1 : 0, (status & STATUS_IMX_BIT) ? 1 : 0,
+           (status & STATUS_BST_BIT) ? 1 : 0, (status & STATUS_IMN_BIT) ? 1 : 0,
+           (status & STATUS_POR_BIT) ? 1 : 0);
+}
+
 bool MAX17260Component::check_por_bit_(bool &por_set) {
   // Step 0: Check if POR bit is set (UG6595 Section 2, Step 0)
   uint16_t status;
@@ -584,9 +659,9 @@ bool MAX17260Component::perform_ez_config_(float charge_voltage) {
   
   ESP_LOGD(TAG, "Performing EZ Config...");
   
-  // Write DesignCap (330mAh battery with 25mΩ sense resistor)
-  // LSB = 5.0μVh/RSENSE = 5.0μVh/0.025Ω = 0.2mAh
-  // DesignCap = 330mAh / 0.2mAh = 1650
+  // Write DesignCap (330mAh battery with 15mΩ sense resistor)
+  // LSB = 5.0μVh/RSENSE = 5.0μVh/0.015Ω = 0.3333mAh
+  // DesignCap = 330mAh / 0.3333mAh = 990
   if (!this->write_register_word_(MAX17260_REG_DESIGNCAP, DESIGN_CAP)) {
     ESP_LOGE(TAG, "Failed to write DesignCap");
     return false;
@@ -594,8 +669,8 @@ bool MAX17260Component::perform_ez_config_(float charge_voltage) {
   ESP_LOGD(TAG, "  DesignCap = %d (330mAh)", DESIGN_CAP);
   
   // Write IChgTerm (20mA charge termination current)
-  // LSB = 1.5625μV/RSENSE = 1.5625μV/0.025Ω = 62.5μA
-  // IChgTerm = 20mA / 0.0625mA = 320
+  // LSB = 1.5625μV/RSENSE = 1.5625μV/0.015Ω = 104.1667μA
+  // IChgTerm = 20mA / 0.1041667mA = 192
   if (!this->write_register_word_(MAX17260_REG_ICHGTERM, ICHG_TERM)) {
     ESP_LOGE(TAG, "Failed to write IChgTerm");
     return false;

@@ -12,10 +12,11 @@ from esphome.components import (
 from esphome.const import (
     CONF_ID,
     CONF_ADDRESS,
+    CONF_PIN,
     CONF_UPDATE_INTERVAL,
     DEVICE_CLASS_VOLTAGE,
     DEVICE_CLASS_CURRENT,
-    DEVICE_CLASS_BATTERY,
+    DEVICE_CLASS_BATTERY_CHARGING,
     STATE_CLASS_MEASUREMENT,
     UNIT_VOLT,
     UNIT_SECOND,
@@ -56,6 +57,7 @@ CONF_DEEP_SLEEP_ID = "deep_sleep_id"
 CONF_VINDPM_THRESHOLD = "vindpm_threshold"
 CONF_CHARGING_ENABLED = "charging_enabled"
 CONF_CHARGE_DISABLE = "charge_disable"
+CONF_BELL_MUTE = "bell_mute"
 CONF_WIPER_VALUE = "wiper_value"
 CONF_SUPPLY_VOLTAGE = "supply_voltage"
 CONF_CHARGE_CURRENT = "charge_current"
@@ -77,6 +79,9 @@ ChargingEnabledSwitch = doorbell_controller_ns.class_(
 )
 ChargeDisableSwitch = doorbell_controller_ns.class_(
     "ChargeDisableSwitch", switch.Switch, cg.Component
+)
+BellMuteSwitch = doorbell_controller_ns.class_(
+    "BellMuteSwitch", switch.Switch, cg.Component
 )
 
 # Schema for VINDPM threshold number
@@ -106,6 +111,16 @@ CHARGE_DISABLE_SCHEMA = switch.switch_schema(
     ChargeDisableSwitch,
     icon="mdi:battery-off",
     entity_category=ENTITY_CATEGORY_CONFIG,
+).extend(cv.COMPONENT_SCHEMA)
+
+# Schema for persistent bell mute switch
+BELL_MUTE_SCHEMA = switch.switch_schema(
+    BellMuteSwitch,
+    icon="mdi:bell-off",
+).extend(
+    {
+        cv.Required(CONF_PIN): pins.internal_gpio_output_pin_schema,
+    }
 ).extend(cv.COMPONENT_SCHEMA)
 
 # Schema for wiper value sensor
@@ -138,7 +153,7 @@ CHARGE_CURRENT_SCHEMA = sensor.sensor_schema(
 
 # Schema for charging binary sensor
 CHARGING_SCHEMA = binary_sensor.binary_sensor_schema(
-    device_class=DEVICE_CLASS_BATTERY,
+    device_class=DEVICE_CLASS_BATTERY_CHARGING,
     icon="mdi:battery-charging",
 )
 
@@ -170,6 +185,7 @@ CONFIG_SCHEMA = (
             # Sub-components - Switches
             cv.Optional(CONF_CHARGING_ENABLED): CHARGING_ENABLED_SCHEMA,
             cv.Optional(CONF_CHARGE_DISABLE): CHARGE_DISABLE_SCHEMA,
+            cv.Optional(CONF_BELL_MUTE): BELL_MUTE_SCHEMA,
             # Sub-components - Sensors
             cv.Optional(CONF_WIPER_VALUE): WIPER_VALUE_SCHEMA,
             cv.Optional(CONF_SUPPLY_VOLTAGE): SUPPLY_VOLTAGE_SCHEMA,
@@ -258,6 +274,14 @@ async def to_code(config):
         await cg.register_component(sw, conf)
         cg.add(sw.set_parent(var))
         cg.add(var.set_charge_disable_switch(sw))
+
+    if CONF_BELL_MUTE in config:
+        conf = config[CONF_BELL_MUTE]
+        sw = cg.new_Pvariable(conf[CONF_ID])
+        await switch.register_switch(sw, conf)
+        await cg.register_component(sw, conf)
+        pin = await cg.gpio_pin_expression(conf[CONF_PIN])
+        cg.add(sw.set_pin(pin))
 
     # Configure sensors
     if CONF_WIPER_VALUE in config:
