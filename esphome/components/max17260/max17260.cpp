@@ -79,7 +79,7 @@
  * =====================
  * - Design Capacity: 330mAh
  * - Sense Resistor: 15mΩ
- * - Charge Termination: 20mA
+ * - Charge Termination: 1.5mA (LTC4079 C/10, R_PROG=20kΩ, ~15mA max charge)
  * - Empty Voltage: 3.3V (recovery at 3.88V)
  * - Charge Voltage: 4.2V (standard Li-ion)
  * 
@@ -101,8 +101,10 @@ void MAX17260Component::setup() {
   ESP_LOGCONFIG(TAG, "Setting up MAX17260...");
 
   // Preferences must exist before we try to restore learned parameters.
+  // NVS key includes IChgTerm value so learned params are invalidated when
+  // charge-termination calibration changes (e.g. IChgTerm 192→14 fix).
   this->learned_params_pref_ = global_preferences->make_preference<LearnedParameters>(
-    fnv1_hash("max17260_learned"));
+    fnv1_hash("max17260_lp_v2"));
   
   // === STEP 0: Check POR bit (UG6595 Section 2, Step 0) ===
   bool por_set;
@@ -113,8 +115,18 @@ void MAX17260Component::setup() {
   }
 
   if (!por_set) {
-    // Already initialized, skip initialization
+    // Already initialized, skip full EZ config sequence
     ESP_LOGI(TAG, "MAX17260 already initialized (POR bit clear)");
+    
+    // Always ensure IChgTerm matches firmware constant, even without POR.
+    // This covers the case where the constant was corrected (e.g. 192→14)
+    // but the MAX17260 retains the old value in its registers.
+    uint16_t current_ichg;
+    if (this->read_register_word_(MAX17260_REG_ICHGTERM, current_ichg) && current_ichg != ICHG_TERM) {
+      ESP_LOGW(TAG, "IChgTerm register mismatch: chip has %d, firmware wants %d - updating", current_ichg, ICHG_TERM);
+      this->write_register_word_(MAX17260_REG_ICHGTERM, ICHG_TERM);
+    }
+    
     this->initialized_ = true;
     return;
   }
@@ -272,8 +284,8 @@ void MAX17260Component::dump_config() {
   
   ESP_LOGCONFIG(TAG, "  Battery Configuration:");
   ESP_LOGCONFIG(TAG, "    Design Capacity: 330 mAh");
-  ESP_LOGCONFIG(TAG, "    Sense Resistor: 25 mΩ");
-  ESP_LOGCONFIG(TAG, "    Charge Termination: 20 mA");
+  ESP_LOGCONFIG(TAG, "    Sense Resistor: 15 mΩ");
+  ESP_LOGCONFIG(TAG, "    Charge Termination: 1.5 mA (LTC4079 C/10 with R_PROG=20kΩ)");
   
   LOG_SENSOR("  ", "Voltage", this->voltage_sensor_);
   LOG_SENSOR("  ", "Current", this->current_sensor_);
@@ -675,7 +687,7 @@ bool MAX17260Component::perform_ez_config_(float charge_voltage) {
     ESP_LOGE(TAG, "Failed to write IChgTerm");
     return false;
   }
-  ESP_LOGD(TAG, "  IChgTerm = %d (20mA)", ICHG_TERM);
+  ESP_LOGD(TAG, "  IChgTerm = %d (1.5mA, LTC4079 C/10)", ICHG_TERM);
   
   // Write VEmpty (0xA561: VE=3.3V, VR=3.88V per datasheet default)
   if (!this->write_register_word_(MAX17260_REG_VEMPTY, VEMPTY)) {

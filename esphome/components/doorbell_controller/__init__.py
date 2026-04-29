@@ -252,7 +252,7 @@ async def to_code(config):
         num = await number.new_number(
             conf,
             min_value=30.0,
-            max_value=300.0,
+            max_value=3600.0,
             step=30.0,
         )
         await cg.register_component(num, conf)

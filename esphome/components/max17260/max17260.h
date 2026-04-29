@@ -156,7 +156,7 @@ static const float CYCLES_SCALE = 1.0f / 100.0f;       // 1% cycle per LSB
 
 // Battery configuration
 static const uint16_t DESIGN_CAP = 990;  // 330mAh / (5μVh/15mΩ) = 990
-static const uint16_t ICHG_TERM = 192;   // 20mA × 15mΩ / 1.5625μV = 192
+static const uint16_t ICHG_TERM = 14;    // 1.5mA × 15mΩ / 1.5625μV = 14.4 ≈ 14 (matches LTC4079 C/10 termination with R_PROG=20kΩ)
 static const uint16_t VEMPTY = 0xA561;    // VE=3.3V, VR=3.88V (default for Li-ion)
 
 class MAX17260Component : public PollingComponent, public i2c::I2CDevice {

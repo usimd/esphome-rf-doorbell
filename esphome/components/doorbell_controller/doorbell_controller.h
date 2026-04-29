@@ -264,7 +264,7 @@ class DoorbellControllerComponent : public PollingComponent, public i2c::I2CDevi
   
   // Deep sleep reference
   deep_sleep::DeepSleepComponent *deep_sleep_{nullptr};
-  uint32_t sleep_duration_{120};  // Match the firmware deep_sleep default
+  uint32_t sleep_duration_{300};  // Match the firmware deep_sleep default
 
   // Sub-components
   VINDPMThresholdNumber *vindpm_threshold_number_{nullptr};

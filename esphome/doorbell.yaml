@@ -47,7 +47,7 @@ esp32:
 # =============================================================================
 deep_sleep:
   id: deep_sleep_control
-  sleep_duration: 120s
+  sleep_duration: 300s
   # On ESP32-C6, runtime GPIO4 sensing works reliably, so use the single-pin GPIO wake
   # path for the bell input and reserve ext1 for the active-low battery alert.
   wakeup_pin:
@@ -408,6 +408,16 @@ sensor:
     name: "WiFi Signal"
     disabled_by_default: true
     update_interval: never
+
+  # Desired sleep duration from HA (input_number.doorbell_sleep_duration_desired)
+  # HA automations set this value; reconciled on each wake before sleeping.
+  - platform: homeassistant
+    id: sleep_duration_desired
+    internal: true
+    entity_id: input_number.doorbell_sleep_duration_desired
+    on_value:
+      then:
+        - script.execute: reconcile_sleep_duration
   
 # =============================================================================
 # Text Sensors
@@ -499,6 +509,25 @@ script:
             - logger.log: "Bell Mute desired state unavailable yet"
       - script.execute: publish_diagnostics
 
+  - id: reconcile_sleep_duration
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: 'return id(sleep_duration_desired).has_state();'
+          then:
+            - lambda: |-
+                uint32_t desired = static_cast<uint32_t>(id(sleep_duration_desired).state);
+                if (desired < 60) desired = 60;
+                if (desired > 7200) desired = 7200;
+                uint32_t current = id(charger_controller).get_sleep_duration();
+                if (desired != current) {
+                  ESP_LOGI("sleep", "Sleep duration: %us -> %us", current, desired);
+                  id(charger_controller).set_sleep_duration(desired);
+                }
+          else:
+            - logger.log: "Sleep duration desired state unavailable"
+
   - id: sync_bell_mute_desired_on
     mode: restart
     then:
@@ -579,11 +608,17 @@ script:
   - id: handle_interrupt_wakeup
     then:
       - deep_sleep.prevent: deep_sleep_control
-      - logger.log: "Interrupt wakeup - updating sensors"
+      - logger.log: "Interrupt wakeup - updating sensors, waiting for API"
       - component.update: charger_controller
       - component.update: fuel_gauge
+      - wait_until:
+          condition:
+            lambda: 'return api::global_api_server->is_connected();'
+          timeout: 10s
       - script.execute: reconcile_bell_mute
-      - delay: 8s
+      - script.execute: reconcile_sleep_duration
+      - script.execute: publish_diagnostics
+      - delay: 1s
       - deep_sleep.enter: deep_sleep_control
 
   - id: extend_wake_time
@@ -591,6 +626,7 @@ script:
     then:
       - deep_sleep.prevent: deep_sleep_control
       - script.execute: reconcile_bell_mute
+      - script.execute: reconcile_sleep_duration
       - logger.log: "Extended wake time for 60s (user interaction)"
       - delay: 60s
       - deep_sleep.enter: deep_sleep_control
@@ -601,6 +637,7 @@ script:
       - component.update: charger_controller
       - component.update: fuel_gauge
       - script.execute: reconcile_bell_mute
+      - script.execute: reconcile_sleep_duration
       - logger.log: "Cold boot - OTA window open for 120s"
       - delay: 120s
       - deep_sleep.enter: deep_sleep_control
@@ -608,11 +645,24 @@ script:
   - id: quick_sync_and_sleep
     then:
       - deep_sleep.prevent: deep_sleep_control
-      - logger.log: "Quick sync wake (8s for WiFi + HA state)"
+      - logger.log: "Quick sync wake - sensors first, then wait for API"
       - component.update: charger_controller
       - component.update: fuel_gauge
-      - script.execute: reconcile_bell_mute
-      - delay: 8s
+      - wait_until:
+          condition:
+            lambda: 'return api::global_api_server->is_connected();'
+          timeout: 10s
+      - if:
+          condition:
+            lambda: 'return api::global_api_server->is_connected();'
+          then:
+            - script.execute: reconcile_bell_mute
+            - script.execute: reconcile_sleep_duration
+            - script.execute: publish_diagnostics
+            - logger.log: "API connected - sync done, sleeping"
+            - delay: 1s
+          else:
+            - logger.log: "API connect timeout - sleeping without sync"
       - deep_sleep.enter: deep_sleep_control
 
 # =============================================================================
