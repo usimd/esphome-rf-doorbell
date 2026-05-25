@@ -142,6 +142,11 @@ globals:
     max_restore_data_length: 31
     initial_value: '"startup"'
 
+  - id: last_bell_millis
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+
 # =============================================================================
 # External Components
 # =============================================================================
@@ -337,6 +342,9 @@ binary_sensor:
         - script.execute: handle_interrupt_wakeup
 
   # Doorbell button press detection (via LTV-354T optocoupler)
+  # Hardware debounce on the bell front-end handles noise spikes.
+  # Cooldown logic in handle_doorbell_press (30s) prevents repeated triggers
+  # from sustained intercom line noise.
   - platform: gpio
     id: bell_signal_gpio
     internal: true
@@ -440,36 +448,50 @@ script:
   - id: handle_doorbell_press
     mode: single
     then:
-      - lambda: |-
-          id(bell_event_count) += 1;
-      - binary_sensor.template.publish:
-          id: bell_signal
-          state: true
-      - script.execute: publish_diagnostics
-      - wait_until:
-          condition:
-            lambda: 'return api::global_api_server->is_connected();'
-          timeout: 20s
+      # 30-second cooldown: reject noise re-triggers after a real press.
+      # The if-condition wraps the entire body because ESPHome scripts
+      # cannot early-return from a lambda.
       - if:
           condition:
-            lambda: 'return api::global_api_server->is_connected();'
+            lambda: |-
+              uint32_t now_ms = millis();
+              if (id(last_bell_millis) != 0 && (now_ms - id(last_bell_millis)) < 30000) {
+                ESP_LOGI("bell", "Ignoring bell press within 30s cooldown (%u ms since last)",
+                         now_ms - id(last_bell_millis));
+                return false;
+              }
+              id(last_bell_millis) = now_ms;
+              id(bell_event_count) += 1;
+              return true;
           then:
-            - homeassistant.event:
-                event: esphome.doorbell_ring
-                data:
-                  device: esphome-rf-doorbell
-                  timestamp: !lambda 'return id(esphome_time).now().timestamp;'
-            - homeassistant.action:
-                service: notify.notify
-                data:
-                  title: "Doorbell"
-                  message: "Someone is at the door!"
-          else:
-            - logger.log: "Doorbell ring captured before API connected"
-      - delay: 2s
-      - binary_sensor.template.publish:
-          id: bell_signal
-          state: false
+            - binary_sensor.template.publish:
+                id: bell_signal
+                state: true
+            - script.execute: publish_diagnostics
+            - wait_until:
+                condition:
+                  lambda: 'return api::global_api_server->is_connected();'
+                timeout: 20s
+            - if:
+                condition:
+                  lambda: 'return api::global_api_server->is_connected();'
+                then:
+                  - homeassistant.event:
+                      event: esphome.doorbell_ring
+                      data:
+                        device: esphome-rf-doorbell
+                        timestamp: !lambda 'return id(esphome_time).now().timestamp;'
+                  - homeassistant.action:
+                      service: notify.notify
+                      data:
+                        title: "Doorbell"
+                        message: "Someone is at the door!"
+                else:
+                  - logger.log: "Doorbell ring captured before API connected"
+            - delay: 2s
+            - binary_sensor.template.publish:
+                id: bell_signal
+                state: false
 
   - id: publish_diagnostics
     mode: restart
