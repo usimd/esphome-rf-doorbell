@@ -42,7 +42,7 @@ esp32:
 #      this pin has been unreliable on bench.
 #   2. GPIO2 (BAT_ALERT MAX17260) - Battery alert, update sensor and quick sleep
 #      Uses ext1 ANY_LOW because the alert line is open-drain active-low.
-#   3. Timer (120s) - Periodic sync of HA desired state and diagnostics
+#   3. Timer (300s default, HA-controlled) - Periodic sync of HA desired state and diagnostics
 # Power target: TPS63900 provides <400nA quiescent, total deep sleep <10uA
 # =============================================================================
 deep_sleep:
