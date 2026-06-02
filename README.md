@@ -1,5 +1,9 @@
 # ESPHome RF Doorbell
 
+![License: CERN-OHL-W-2.0](https://img.shields.io/badge/license_HW-CERN--OHL--W--2.0-blue)
+[![CI](https://github.com/usimd/esphome-rf-doorbell/actions/workflows/ci.yaml/badge.svg)](https://github.com/usimd/esphome-rf-doorbell/actions/workflows/ci.yaml)
+[![Upload to AISLER](https://img.shields.io/badge/Upload_to_-AISLER-ff8000)](https://aisler.net/p/new?url=https://raw.githubusercontent.com/usimd/esphome-rf-doorbell/refs/heads/main/base/esphome-rf-doorbell.kicad_pcb&ref=github)
+
 Battery-powered ESPHome doorbell hardware and firmware centered on the current Rev3 base board.
 
 ## Current Scope
@@ -68,3 +72,9 @@ The configuration expects `esphome/secrets.yaml` to exist locally.
 
 - The ESP32-C6 pin usage in this design currently triggers ESPHome warnings for USB-Serial-JTAG pins and strapping pins. Those warnings reflect the current hardware choices and should be kept in mind during bring-up.
 - `esphome/charging_test.yaml` and `esphome/charging_test_simple.yaml` currently exist as untracked placeholders and are not part of the supported firmware path.
+
+## AISLER discount
+
+In case you want to order this (or any other) project at AISLER, here's a 10€ discount code: `MakeInEurope-ZDCTN`
+
+
