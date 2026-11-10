@@ -1,31 +1,31 @@
-# =============================================================================
-# ESPHome RF Doorbell - Rev3 Hardware Configuration
-# =============================================================================
-# Hardware: ESP32-C6-MINI-1, LTC4079 charger, MAX17260 fuel gauge, Wio-SX1262
-# 
-# Rev3 hardware summary:
-#   - MCU: ESP32-C6-MINI-1
-#   - Charger: LTC4079 controlled via ISL23315 digipot
-#   - RF: Wio-SX1262 LoRa via ESPHome's sx126x component
-#   - Buck: TPS63900 for ultra-low quiescent current
-#
-# =============================================================================
-
+# ESP32-C6 intercom: always-connected Thread SED with automatic light sleep.
+# Requires ESPHome 2026.11.0b3 (see requirements.txt).
 esphome:
   name: esphome-rf-doorbell
   friendly_name: Doorbell
-
-  includes:
-    - components/max17260/max17260.h
-  
+  min_version: 2026.11.0b3
   on_boot:
-    - priority: -100  # Runs last after all components initialized
-      then:
-        - script.execute: handle_boot_wakeup
+    priority: -100
+    then:
+      # Template numbers publish restored values without running set_action.
+      - openthread.set_poll_period:
+          poll_period: !lambda 'return static_cast<uint32_t>(id(thread_poll_period).state * 1000);'
+      - binary_sensor.template.publish:
+          id: bell_signal
+          state: false
+      - component.update: charger_controller
+      - component.update: fuel_gauge
+      - if:
+          condition:
+            binary_sensor.is_on: bell_signal_gpio
+          then:
+            - script.execute: handle_doorbell_press
+      - if:
+          condition:
+            binary_sensor.is_on: battery_alert_pin
+          then:
+            - script.execute: handle_battery_alert
 
-# =============================================================================
-# ESP32-C6 configuration (Rev3 custom hardware)
-# =============================================================================
 esp32:
   board: esp32-c6-devkitm-1
   variant: esp32c6
@@ -33,148 +33,102 @@ esp32:
     type: esp-idf
     version: recommended
 
-# =============================================================================
-# Deep Sleep Configuration for Low Power Operation
-# =============================================================================
-# Wake sources:
-#   1. GPIO4 (Bell Signal) - Doorbell pressed, stay awake 60s for user interaction
-#      Uses the ESP32-C6 GPIO wake path because runtime GPIO4 works, but ext1 wake on
-#      this pin has been unreliable on bench.
-#   2. GPIO2 (BAT_ALERT MAX17260) - Battery alert, update sensor and quick sleep
-#      Uses ext1 ANY_LOW because the alert line is open-drain active-low.
-#   3. Timer (300s default, HA-controlled) - Periodic sync of HA desired state and diagnostics
-# Power target: TPS63900 provides <400nA quiescent, total deep sleep <10uA
-# =============================================================================
-deep_sleep:
-  id: deep_sleep_control
-  sleep_duration: 300s
-  # On ESP32-C6, runtime GPIO4 sensing works reliably, so use the single-pin GPIO wake
-  # path for the bell input and reserve ext1 for the active-low battery alert.
-  wakeup_pin:
-    number: GPIO4
-    mode:
-      input: true
-      pulldown: true
-    inverted: false
-    allow_other_uses: true
-  wakeup_pin_mode: KEEP_AWAKE
-  esp32_ext1_wakeup:
-    pins:
-      - number: GPIO2   # Battery alert (active LOW open-drain)
-        allow_other_uses: true
-    mode: ANY_LOW
+network:
+  enable_ipv6: true
+  enable_ipv4: false
 
-# Enable logging
+openthread:
+  device_type: MTD
+  tlv: !secret thread_tlv
+  poll_period: 5s
+  output_power: 20
+
+power_management:
+  - platform: esp32_power_management
+    enable_light_sleep: true
+    # Validate I2C/ADC/SPI after sleep before enabling peripheral power-down.
+    power_down_peripherals: false
+
 logger:
   level: INFO
   baud_rate: 115200
   hardware_uart: UART0
 
-# Time component for timestamps
 time:
   - platform: homeassistant
     id: esphome_time
 
 api:
-  homeassistant_states: true
+  # Preserve physical outputs during a border-router/HA outage.
+  reboot_timeout: 0s
   encryption:
     key: !secret doorbell_api_encryption_key
 
 ota:
   - platform: esphome
     password: !secret doorbell_ota_password
+    on_begin:
+      - globals.set:
+          id: ota_active
+          value: 'true'
+      - openthread.set_poll_period:
+          poll_period: 0s
+    on_error:
+      - globals.set:
+          id: ota_active
+          value: 'false'
+      - openthread.set_poll_period:
+          poll_period: !lambda 'return static_cast<uint32_t>(id(thread_poll_period).state * 1000);'
+    on_abort:
+      - globals.set:
+          id: ota_active
+          value: 'false'
+      - openthread.set_poll_period:
+          poll_period: !lambda 'return static_cast<uint32_t>(id(thread_poll_period).state * 1000);'
 
-wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
-  fast_connect: true
-  output_power: 15dB
-  ap:
-    ssid: "Doorbell Fallback Hotspot"
-    password: !secret doorbell_ap_password
-    ap_timeout: 30s
-
-captive_portal:
-
-# =============================================================================
-# Persistent Diagnostics
-# =============================================================================
 globals:
-  - id: wake_count_total
-    type: uint32_t
-    restore_value: true
-    initial_value: '0'
-
-  - id: wake_count_doorbell
-    type: uint32_t
-    restore_value: true
-    initial_value: '0'
-
-  - id: wake_count_timer
-    type: uint32_t
-    restore_value: true
-    initial_value: '0'
-
-  - id: wake_count_battery
-    type: uint32_t
-    restore_value: true
-    initial_value: '0'
-
-  - id: wake_count_cold_boot
-    type: uint32_t
-    restore_value: true
-    initial_value: '0'
-
-  - id: bell_event_count
-    type: uint32_t
-    restore_value: true
-    initial_value: '0'
-
-  - id: last_wake_reason
-    type: std::string
-    restore_value: true
-    max_restore_data_length: 31
-    initial_value: '"unknown"'
-
-  - id: last_mute_sync_status
-    type: std::string
-    restore_value: true
-    max_restore_data_length: 31
-    initial_value: '"startup"'
-
-  - id: last_bell_millis
-    type: uint32_t
+  - id: ota_active
+    type: bool
     restore_value: false
-    initial_value: '0'
+    initial_value: 'false'
 
-# =============================================================================
-# External Components
-# =============================================================================
+number:
+  - platform: template
+    id: thread_poll_period
+    name: "Thread Poll Period"
+    entity_category: config
+    unit_of_measurement: s
+    min_value: 1
+    max_value: 60
+    step: 1
+    initial_value: 5
+    restore_value: true
+    optimistic: true
+    update_interval: never
+    set_action:
+      - if:
+          condition:
+            lambda: 'return !id(ota_active);'
+          then:
+            - openthread.set_poll_period:
+                poll_period: !lambda 'return static_cast<uint32_t>(x * 1000);'
+
 external_components:
   - source:
       type: local
       path: components
     components: [max17260, doorbell_controller]
 
-# =============================================================================
-# I2C Bus (shared by doorbell_controller and max17260)
-# =============================================================================
 i2c:
   sda: GPIO13
   scl: GPIO12
-  frequency: 100kHz  # Lower frequency for weak pull-ups on PCB
+  frequency: 100kHz
 
-# =============================================================================
-# SPI Bus (used by sx126x LoRa module)
-# =============================================================================
 spi:
   clk_pin: GPIO19
   mosi_pin: GPIO21
   miso_pin: GPIO20
 
-# =============================================================================
-# Wio-SX1262 LoRa Transceiver (Rev3)
-# =============================================================================
 sx126x:
   id: lora_transceiver
   cs_pin: GPIO18
@@ -195,13 +149,11 @@ sx126x:
   sync_value: [0x14, 0x24]
   preamble_size: 8
   rx_start: false
-  
   on_packet:
     then:
       - logger.log:
           format: "LoRa packet received: RSSI=%.1f dBm, SNR=%.1f dB"
           args: ['rssi', 'snr']
-      # Door open command (0x01)
       - if:
           condition:
             lambda: 'return x.size() >= 1 && x[0] == 0x01;'
@@ -212,175 +164,97 @@ sx126x:
                 data:
                   title: "Doorbell"
                   message: "Door opened via LoRa remote"
-      # Doorbell ring from remote (0x10)
       - if:
           condition:
             lambda: 'return x.size() >= 1 && x[0] == 0x10;'
           then:
             - script.execute: handle_doorbell_press
-            - script.execute: extend_wake_time
 
-# =============================================================================
-# Doorbell Controller Component
-# =============================================================================
-# Manages:
-#   - ISL23315 digital potentiometer (I2C 0x50)
-#   - LTC4079 charger VINDPM control via voltage divider
-#   - Charge disable override via GPIO7
-#   - Supply voltage measurement via switchable divider
-#   - Charge current monitoring (from V_PROG / R_PROG)
-#   - Sleep duration configuration
-#
-# VINDPM Circuit: Supply → R5(820k) → CHG_EN → R6(120k) → ISL23315 wiper → GND
-# LTC4079 EN threshold: 1.190V (charge), 0.750V (shutdown)
-# Charge current: I_CHG = 250 * V_PROG / R_PROG (30k = ~10mA max)
-# =============================================================================
 doorbell_controller:
   id: charger_controller
-  deep_sleep_id: deep_sleep_control
-  # ISL23315 digipot address (A1=0, A0=0 -> 0x50)
   address: 0x50
-  # Voltage divider configuration (matches schematic)
-  r_high: 820000    # R5
-  r_low: 120000     # R6
-  digipot_resistance: 100000  # ISL23315T = 100kΩ
-  # Supply voltage divider ratio: (R5 + R3) / R3 = (1M + 100k) / 100k = 11.0
+  update_interval: 60s
+  r_high: 820000
+  r_low: 120000
+  digipot_resistance: 100000
   supply_divider_ratio: 11.0
-  # LTC4079 R_PROG for charge current calculation
-  r_prog: 20000     # R11 fitted on assembled board - sets max charge current to about 15mA
-  # Hardware pins
+  r_prog: 20000
   charge_disable_pin:
     number: GPIO7
     inverted: true
-  supply_sense_enable_pin: GPIO6  # Controls Q1 gate for voltage divider
-  supply_adc_pin: 0   # GPIO0 - supply voltage via divider
-  vprog_adc_pin: 1    # GPIO1 - LTC4079 charge programming voltage
-  # VINDPM threshold control (5.6V - 9.3V range)
+  supply_sense_enable_pin: GPIO6
+  supply_adc_pin: 0
+  vprog_adc_pin: 1
+  bell_wakeup_pin:
+    number: GPIO4
+    mode: INPUT_PULLDOWN
+    allow_other_uses: true
+  battery_alert_wakeup_pin:
+    number: GPIO2
+    mode: INPUT_PULLUP
+    inverted: true
+    allow_other_uses: true
   vindpm_threshold:
     name: "VINDPM Threshold"
-  # Sleep duration control
-  sleep_duration:
-    name: "Sleep Duration"
-  # Charging enable/disable switch
   charging_enabled:
     name: "Battery Charging Enable"
     disabled_by_default: true
   bell_mute:
     id: bell_mute
-    name: "Bell Mute Relay"
-    internal: true
+    name: "Bell Mute"
     restore_mode: RESTORE_DEFAULT_OFF
     pin: GPIO5
-    on_turn_on:
-      - script.execute: sync_bell_mute_desired_on
-      - script.execute: publish_diagnostics
-    on_turn_off:
-      - script.execute: sync_bell_mute_desired_off
-      - script.execute: publish_diagnostics
-  # Supply voltage sensor (intercom transformer power) - diagnostic
   supply_voltage:
     name: "Supply Voltage"
-  # Charge current sensor (calculated from V_PROG / R_PROG)
   charge_current:
     name: "Charge Current"
-  # Diagnostic: current wiper value
   wiper_value:
     name: "Digipot Wiper Value"
     disabled_by_default: true
 
-# =============================================================================
-# MAX17260 Fuel Gauge Component
-# =============================================================================
-# Only state_of_charge is primary; all others are diagnostic
-# =============================================================================
 max17260:
   id: fuel_gauge
   address: 0x36
-  update_interval: never
-  # Primary sensor - battery percentage for Home Assistant
+  update_interval: 20min
   state_of_charge:
     name: "Battery Percentage"
 
-# =============================================================================
-# Binary Sensors
-# =============================================================================
 binary_sensor:
   - platform: template
     name: "Bell Signal"
     id: bell_signal
 
-  - platform: homeassistant
-    id: bell_mute_desired
-    internal: true
-    entity_id: input_boolean.doorbell_bell_mute_desired
-    trigger_on_initial_state: true
-    on_state:
-      then:
-        - script.execute: reconcile_bell_mute
-
-  - platform: template
-    name: "Bell Mute Active"
-    id: bell_mute_active_status
-
-  # Battery alert from MAX17260 fuel gauge (open-drain active-low)
   - platform: gpio
     name: "Battery Alert"
     id: battery_alert_pin
     disabled_by_default: true
+    # GPIO wake shares its level-trigger type with normal GPIO interrupts.
+    use_interrupt: false
     pin:
       number: GPIO2
       mode: INPUT_PULLUP
       inverted: true
       allow_other_uses: true
+    on_state:
+      - lambda: 'id(charger_controller).refresh_wakeup_sources();'
     on_press:
-      then:
-        - homeassistant.action:
-            service: notify.notify
-            data:
-              message: "Doorbell battery low!"
-        - logger.log: "Battery alert triggered"
-        - script.execute: handle_interrupt_wakeup
+      - script.execute: handle_battery_alert
 
-  # Doorbell button press detection (via LTV-354T optocoupler)
-  # Hardware debounce on the bell front-end handles noise spikes.
-  # Cooldown logic in handle_doorbell_press (30s) prevents repeated triggers
-  # from sustained intercom line noise.
   - platform: gpio
     id: bell_signal_gpio
     internal: true
+    # Light-sleep GPIO wake is immediate; sample on the resumed main loop.
+    use_interrupt: false
     pin:
       number: GPIO4
       mode: INPUT_PULLDOWN
-      inverted: false
       allow_other_uses: true
+    on_state:
+      - lambda: 'id(charger_controller).refresh_wakeup_sources();'
     on_press:
-      then:
-        - script.execute: handle_doorbell_press
-        - script.execute: extend_wake_time
+      - script.execute: handle_doorbell_press
 
-# =============================================================================
-# Switches
-# =============================================================================
 switch:
-  - platform: homeassistant
-    id: bell_mute_desired_switch
-    internal: true
-    entity_id: input_boolean.doorbell_bell_mute_desired
-
-  - platform: template
-    name: "Bell Mute"
-    id: bell_mute_requested_switch
-    lambda: |-
-      if (!id(bell_mute_desired).has_state()) {
-        return {};
-      }
-      return id(bell_mute_desired).state;
-    turn_on_action:
-      - switch.turn_on: bell_mute_desired_switch
-    turn_off_action:
-      - switch.turn_off: bell_mute_desired_switch
-
-  # Door opener control (via G3VM-31DR PhotoMOS NO relay)
   - platform: gpio
     name: "Door Opener"
     id: door_opener
@@ -389,11 +263,9 @@ switch:
       mode: OUTPUT
     restore_mode: RESTORE_DEFAULT_OFF
     on_turn_on:
-      then:
-        - delay: 5s
-        - switch.turn_off: door_opener
+      - delay: 5s
+      - switch.turn_off: door_opener
 
-  # LoRa Pairing Mode
   - platform: template
     name: "LoRa Pairing Mode"
     id: lora_pairing_mode
@@ -407,74 +279,35 @@ switch:
     on_turn_off:
       - logger.log: "LoRa pairing mode disabled"
 
-# =============================================================================
-# Sensors
-# =============================================================================
-sensor:
-  # WiFi Signal Strength
-  - platform: wifi_signal
-    name: "WiFi Signal"
-    disabled_by_default: true
-    update_interval: never
-
-  # Desired sleep duration from HA (input_number.doorbell_sleep_duration_desired)
-  # HA automations set this value; reconciled on each wake before sleeping.
-  - platform: homeassistant
-    id: sleep_duration_desired
-    internal: true
-    entity_id: input_number.doorbell_sleep_duration_desired
-    on_value:
-      then:
-        - script.execute: reconcile_sleep_duration
-  
-# =============================================================================
-# Text Sensors
-# =============================================================================
 text_sensor:
   - platform: version
     name: "ESPHome Version"
     disabled_by_default: true
+  - platform: openthread_info
+    ip_address:
+      name: "Thread IP"
+      disabled_by_default: true
+    role:
+      name: "Thread Role"
+      disabled_by_default: true
+    network_name:
+      name: "Thread Network"
+      disabled_by_default: true
 
-  - platform: template
-    name: "Bell Mute Sync Status"
-    id: bell_mute_sync_status_text
-    entity_category: diagnostic
-    update_interval: never
-
-# =============================================================================
-# Scripts
-# =============================================================================
 script:
   - id: handle_doorbell_press
     mode: single
     then:
-      # 30-second cooldown: reject noise re-triggers after a real press.
-      # The if-condition wraps the entire body because ESPHome scripts
-      # cannot early-return from a lambda.
       - if:
           condition:
-            lambda: |-
-              uint32_t now_ms = millis();
-              if (id(last_bell_millis) != 0 && (now_ms - id(last_bell_millis)) < 30000) {
-                ESP_LOGI("bell", "Ignoring bell press within 30s cooldown (%u ms since last)",
-                         now_ms - id(last_bell_millis));
-                return false;
-              }
-              id(last_bell_millis) = now_ms;
-              id(bell_event_count) += 1;
-              return true;
+            lambda: 'return id(charger_controller).accept_bell_press();'
           then:
             - binary_sensor.template.publish:
                 id: bell_signal
                 state: true
-            - script.execute: publish_diagnostics
-            - wait_until:
-                condition:
-                  lambda: 'return api::global_api_server->is_connected();'
-                timeout: 20s
             - if:
                 condition:
-                  lambda: 'return api::global_api_server->is_connected();'
+                  api.connected:
                 then:
                   - homeassistant.event:
                       event: esphome.doorbell_ring
@@ -487,223 +320,47 @@ script:
                         title: "Doorbell"
                         message: "Someone is at the door!"
                 else:
-                  - logger.log: "Doorbell ring captured before API connected"
+                  - logger.log:
+                      level: WARN
+                      format: "Doorbell rang while HA disconnected; event not queued"
             - delay: 2s
             - binary_sensor.template.publish:
                 id: bell_signal
                 state: false
 
-  - id: publish_diagnostics
-    mode: restart
+  - id: handle_battery_alert
+    mode: single
     then:
-      - binary_sensor.template.publish:
-          id: bell_mute_active_status
-          state: !lambda 'return id(bell_mute).state;'
-      - text_sensor.template.publish:
-          id: bell_mute_sync_status_text
-          state: !lambda 'return id(last_mute_sync_status);'
-
-  - id: reconcile_bell_mute
-    mode: restart
-    then:
-      - if:
-          condition:
-            lambda: 'return id(bell_mute_desired).has_state();'
-          then:
-            - if:
-                condition:
-                  lambda: 'return id(bell_mute).state != id(bell_mute_desired).state;'
-                then:
-                  - lambda: |-
-                      id(last_mute_sync_status) = id(bell_mute_desired).state ? "applied_on" : "applied_off";
-                  - logger.log:
-                      format: "Reconciling Bell Mute to desired state: %s"
-                      args: ['id(bell_mute_desired).state ? "ON" : "OFF"']
-                  - switch.control:
-                      id: bell_mute
-                      state: !lambda 'return id(bell_mute_desired).state;'
-                else:
-                  - lambda: |-
-                      id(last_mute_sync_status) = id(bell_mute_desired).state ? "already_on" : "already_off";
-          else:
-            - lambda: |-
-                id(last_mute_sync_status) = "desired_unavailable";
-            - logger.log: "Bell Mute desired state unavailable yet"
-      - script.execute: publish_diagnostics
-
-  - id: reconcile_sleep_duration
-    mode: restart
-    then:
-      - if:
-          condition:
-            lambda: 'return id(sleep_duration_desired).has_state();'
-          then:
-            - lambda: |-
-                uint32_t desired = static_cast<uint32_t>(id(sleep_duration_desired).state);
-                if (desired < 60) desired = 60;
-                if (desired > 7200) desired = 7200;
-                uint32_t current = id(charger_controller).get_sleep_duration();
-                if (desired != current) {
-                  ESP_LOGI("sleep", "Sleep duration: %us -> %us", current, desired);
-                  id(charger_controller).set_sleep_duration(desired);
-                }
-          else:
-            - logger.log: "Sleep duration desired state unavailable"
-
-  - id: sync_bell_mute_desired_on
-    mode: restart
-    then:
-      - if:
-          condition:
-            lambda: 'return api::global_api_server->is_connected() && (!id(bell_mute_desired).has_state() || !id(bell_mute_desired).state);'
-          then:
-            - switch.turn_on: bell_mute_desired_switch
-
-  - id: sync_bell_mute_desired_off
-    mode: restart
-    then:
-      - if:
-          condition:
-            lambda: 'return api::global_api_server->is_connected() && (!id(bell_mute_desired).has_state() || id(bell_mute_desired).state);'
-          then:
-            - switch.turn_off: bell_mute_desired_switch
-  
-  - id: handle_boot_wakeup
-    then:
-      - logger.log: "Boot/wakeup handler started"
-      - binary_sensor.template.publish:
-          id: bell_signal
-          state: false
+      - logger.log: "Battery alert triggered"
+      - component.update: fuel_gauge
       - lambda: |-
-          // Use doorbell_controller static methods for wakeup detection
-          auto cause = doorbell_controller::DoorbellControllerComponent::get_wakeup_cause();
-          auto ext1_wakeup_pins = doorbell_controller::DoorbellControllerComponent::get_ext1_wakeup_pins();
-          auto gpio_wakeup_pins = doorbell_controller::DoorbellControllerComponent::get_gpio_wakeup_pins();
-          bool woke_from_gpio2 = ((ext1_wakeup_pins | gpio_wakeup_pins) & (1ULL << 2)) != 0;
-          bool woke_from_gpio4 = ((ext1_wakeup_pins | gpio_wakeup_pins) & (1ULL << 4)) != 0;
-
-          id(wake_count_total) += 1;
-
-          ESP_LOGI("wakeup", "Wake cause=%d ext1_mask=0x%llX gpio_mask=0x%llX gpio2_wake=%d gpio4_wake=%d gpio2=%d gpio4=%d",
-                   static_cast<int>(cause), ext1_wakeup_pins, gpio_wakeup_pins,
-                   static_cast<int>(woke_from_gpio2),
-                   static_cast<int>(woke_from_gpio4),
-                   static_cast<int>(id(battery_alert_pin).state),
-                   static_cast<int>(id(bell_signal_gpio).state));
-
-          if (woke_from_gpio4) {
-            id(wake_count_doorbell) += 1;
-            id(last_wake_reason) = "doorbell";
-            ESP_LOGI("wakeup", "Woke from GPIO4 (doorbell press)");
-            // Replay the press after deep sleep wake because the optocoupler pulse
-            // may be gone before the GPIO binary_sensor finishes initializing.
-            id(publish_diagnostics).execute();
-            id(handle_doorbell_press).execute();
-            id(extend_wake_time).execute();
-          } else if (woke_from_gpio2) {
-            id(wake_count_battery) += 1;
-            id(last_wake_reason) = "battery_alert";
-            ESP_LOGI("wakeup", "Woke from GPIO2 (battery alert)");
-            id(publish_diagnostics).execute();
-            id(fuel_gauge).dump_alert_diagnostics();
-            id(fuel_gauge).clear_alert_flags();
-            id(handle_interrupt_wakeup).execute();
-          } else if (cause == ESP_SLEEP_WAKEUP_TIMER) {
-            id(wake_count_timer) += 1;
-            id(last_wake_reason) = "timer";
-            ESP_LOGI("wakeup", "Woke up from timer");
-            id(publish_diagnostics).execute();
-            id(quick_sync_and_sleep).execute();
-          } else if (cause == ESP_SLEEP_WAKEUP_EXT1 || cause == ESP_SLEEP_WAKEUP_GPIO) {
-            id(last_wake_reason) = "unknown_gpio";
-            id(publish_diagnostics).execute();
-            ESP_LOGI("wakeup", "Woke from unknown GPIO source");
-            id(quick_sync_and_sleep).execute();
-          } else {
-            id(wake_count_cold_boot) += 1;
-            id(last_wake_reason) = "cold_boot";
-            ESP_LOGI("wakeup", "Cold boot - starting OTA window");
-            id(publish_diagnostics).execute();
-            id(cold_boot_ota_window).execute();
-          }
-
-  - id: handle_interrupt_wakeup
-    then:
-      - deep_sleep.prevent: deep_sleep_control
-      - logger.log: "Interrupt wakeup - updating sensors, waiting for API"
-      - component.update: charger_controller
-      - component.update: fuel_gauge
-      - wait_until:
-          condition:
-            lambda: 'return api::global_api_server->is_connected();'
-          timeout: 10s
-      - script.execute: reconcile_bell_mute
-      - script.execute: reconcile_sleep_duration
-      - script.execute: publish_diagnostics
-      - delay: 1s
-      - deep_sleep.enter: deep_sleep_control
-
-  - id: extend_wake_time
-    mode: restart
-    then:
-      - deep_sleep.prevent: deep_sleep_control
-      - script.execute: reconcile_bell_mute
-      - script.execute: reconcile_sleep_duration
-      - logger.log: "Extended wake time for 60s (user interaction)"
-      - delay: 60s
-      - deep_sleep.enter: deep_sleep_control
-
-  - id: cold_boot_ota_window
-    then:
-      - deep_sleep.prevent: deep_sleep_control
-      - component.update: charger_controller
-      - component.update: fuel_gauge
-      - script.execute: reconcile_bell_mute
-      - script.execute: reconcile_sleep_duration
-      - logger.log: "Cold boot - OTA window open for 120s"
-      - delay: 120s
-      - deep_sleep.enter: deep_sleep_control
-
-  - id: quick_sync_and_sleep
-    then:
-      - deep_sleep.prevent: deep_sleep_control
-      - logger.log: "Quick sync wake - sensors first, then wait for API"
-      - component.update: charger_controller
-      - component.update: fuel_gauge
-      - wait_until:
-          condition:
-            lambda: 'return api::global_api_server->is_connected();'
-          timeout: 10s
+          id(fuel_gauge).dump_alert_diagnostics();
+          id(fuel_gauge).clear_alert_flags();
+          id(charger_controller).refresh_wakeup_sources();
       - if:
           condition:
-            lambda: 'return api::global_api_server->is_connected();'
+            api.connected:
           then:
-            - script.execute: reconcile_bell_mute
-            - script.execute: reconcile_sleep_duration
-            - script.execute: publish_diagnostics
-            - logger.log: "API connected - sync done, sleeping"
-            - delay: 1s
+            - homeassistant.action:
+                service: notify.notify
+                data:
+                  message: "Doorbell battery low!"
           else:
-            - logger.log: "API connect timeout - sleeping without sync"
-      - deep_sleep.enter: deep_sleep_control
+            - logger.log:
+                level: WARN
+                format: "Battery alert while HA disconnected; notification not queued"
 
-# =============================================================================
-# Buttons
-# =============================================================================
 button:
   - platform: restart
     name: "Restart"
     disabled_by_default: true
-
   - platform: template
     name: "Measure Supply Voltage"
     id: measure_supply_button
     disabled_by_default: true
     icon: "mdi:flash"
     on_press:
-      then:
-        - component.update: charger_controller
-
+      - component.update: charger_controller
   - platform: template
     name: "Transmit LoRa Test Packet"
     id: lora_test_button
