@@ -88,6 +88,7 @@
  */
 
 #include "max17260.h"
+#include <cinttypes>
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
@@ -803,7 +804,7 @@ bool MAX17260Component::load_learned_parameters_() {
   // Validate checksum
   uint32_t expected_checksum = this->calculate_checksum_(params);
   if (params.checksum != expected_checksum) {
-    ESP_LOGW(TAG, "Learned parameters checksum mismatch (expected 0x%08X, got 0x%08X) - ignoring",
+    ESP_LOGW(TAG, "Learned parameters checksum mismatch (expected 0x%08" PRIX32 ", got 0x%08" PRIX32 ") - ignoring",
              expected_checksum, params.checksum);
     return false;
   }
