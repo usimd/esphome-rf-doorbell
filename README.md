@@ -42,29 +42,33 @@ remote/                  Unfinished remote hardware kept as WIP
 
 ## Firmware
 
-The active firmware is in `esphome/doorbell.yaml`.
+The active firmware is in `esphome/doorbell.yaml`: an always-connected Thread SED
+with automatic light sleep, targeting ESPHome 2026.11.0b3. WiFi/deep-sleep firmware
+remains available in git history.
 
 Implemented custom components:
 
-- `doorbell_controller`: charger control, supply sensing, runtime sleep duration control
+- `doorbell_controller`: charger control, supply sensing, direct bell mute and light-sleep GPIO wake
 - `max17260`: fuel gauge driver with POR handling and learned-parameter persistence
 
 Radio support uses ESPHome's built-in `sx126x` component rather than a custom RF stack.
 
 ## Build
 
-From `esphome/`:
+Install the pinned beta toolchain, then build:
 
 ```bash
-esphome compile doorbell.yaml
+.venv/bin/python -m pip install -r esphome/requirements.txt
+.venv/bin/esphome compile esphome/doorbell.yaml
 ```
 
-The configuration expects `esphome/secrets.yaml` to exist locally.
+The configuration expects `esphome/secrets.yaml` to contain a real `thread_tlv`
+dataset, API encryption key and OTA password. See [firmware setup](esphome/README.md).
 
 ## Status
 
 - Legacy firmware and custom components are removed from the supported path.
-- The active Rev3 ESPHome config compiles successfully.
+- Thread firmware requires hardware bring-up and current measurement before deployment.
 - CI builds the Rev3 firmware and the base KiCad project.
 - `remote/` remains a hardware placeholder for future work and still contains legacy symbols/footprints inside that WIP design.
 

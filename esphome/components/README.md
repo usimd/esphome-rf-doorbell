@@ -13,7 +13,8 @@ Controls the LTC4079 support circuitry around the ISL23315 digipot and exposes:
 - charge-disable override
 - supply voltage measurement
 - charge current estimation from `V_PROG`
-- runtime deep sleep duration control
+- direct, restored bell-mute control
+- light-sleep wake sources for the bell and battery alert, with bell cooldown suppression
 
 This component explicitly re-enables the ESP-IDF `esp_adc` component because ESPHome excludes it by default for faster builds.
 

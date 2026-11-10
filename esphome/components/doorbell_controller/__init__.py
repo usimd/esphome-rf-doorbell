@@ -2,7 +2,6 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import (
     binary_sensor,
-    deep_sleep,
     esp32,
     i2c,
     number,
@@ -19,14 +18,13 @@ from esphome.const import (
     DEVICE_CLASS_BATTERY_CHARGING,
     STATE_CLASS_MEASUREMENT,
     UNIT_VOLT,
-    UNIT_SECOND,
     UNIT_MILLIAMP,
     ENTITY_CATEGORY_CONFIG,
     ENTITY_CATEGORY_DIAGNOSTIC,
 )
 from esphome import pins
 
-DEPENDENCIES = ["i2c"]
+DEPENDENCIES = ["esp32", "i2c"]
 CODEOWNERS = ["@usimd"]
 AUTO_LOAD = ["sensor", "switch", "number", "binary_sensor"]
 
@@ -50,8 +48,8 @@ CONF_R_PROG = "r_prog"  # R11 in schematic (30k default)
 # Series resistor on V_PROG ADC input for isolation
 CONF_R_SERIES_VPROG = "r_series_vprog"  # 47k default
 
-# Deep sleep component reference for runtime sleep duration updates
-CONF_DEEP_SLEEP_ID = "deep_sleep_id"
+CONF_BELL_WAKEUP_PIN = "bell_wakeup_pin"
+CONF_BATTERY_ALERT_WAKEUP_PIN = "battery_alert_wakeup_pin"
 
 # Sub-component keys
 CONF_VINDPM_THRESHOLD = "vindpm_threshold"
@@ -62,7 +60,6 @@ CONF_WIPER_VALUE = "wiper_value"
 CONF_SUPPLY_VOLTAGE = "supply_voltage"
 CONF_CHARGE_CURRENT = "charge_current"
 CONF_CHARGING = "charging"
-CONF_SLEEP_DURATION = "sleep_duration"
 
 doorbell_controller_ns = cg.esphome_ns.namespace("doorbell_controller")
 DoorbellControllerComponent = doorbell_controller_ns.class_(
@@ -70,9 +67,6 @@ DoorbellControllerComponent = doorbell_controller_ns.class_(
 )
 VINDPMThresholdNumber = doorbell_controller_ns.class_(
     "VINDPMThresholdNumber", number.Number, cg.Component
-)
-SleepDurationNumber = doorbell_controller_ns.class_(
-    "SleepDurationNumber", number.Number, cg.Component
 )
 ChargingEnabledSwitch = doorbell_controller_ns.class_(
     "ChargingEnabledSwitch", switch.Switch, cg.Component
@@ -91,14 +85,6 @@ VINDPM_THRESHOLD_SCHEMA = number.number_schema(
     entity_category=ENTITY_CATEGORY_CONFIG,
 ).extend(cv.COMPONENT_SCHEMA)
 
-# Schema for sleep duration number
-SLEEP_DURATION_SCHEMA = number.number_schema(
-    SleepDurationNumber,
-    icon="mdi:sleep",
-    unit_of_measurement=UNIT_SECOND,
-    entity_category=ENTITY_CATEGORY_CONFIG,
-).extend(cv.COMPONENT_SCHEMA)
-
 # Schema for charging enabled switch
 CHARGING_ENABLED_SCHEMA = switch.switch_schema(
     ChargingEnabledSwitch,
@@ -114,14 +100,18 @@ CHARGE_DISABLE_SCHEMA = switch.switch_schema(
 ).extend(cv.COMPONENT_SCHEMA)
 
 # Schema for persistent bell mute switch
-BELL_MUTE_SCHEMA = switch.switch_schema(
-    BellMuteSwitch,
-    icon="mdi:bell-off",
-).extend(
-    {
-        cv.Required(CONF_PIN): pins.internal_gpio_output_pin_schema,
-    }
-).extend(cv.COMPONENT_SCHEMA)
+BELL_MUTE_SCHEMA = (
+    switch.switch_schema(
+        BellMuteSwitch,
+        icon="mdi:bell-off",
+    )
+    .extend(
+        {
+            cv.Required(CONF_PIN): pins.internal_gpio_output_pin_schema,
+        }
+    )
+    .extend(cv.COMPONENT_SCHEMA)
+)
 
 # Schema for wiper value sensor
 WIPER_VALUE_SCHEMA = sensor.sensor_schema(
@@ -178,10 +168,12 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_R_PROG, default=30000): cv.resistance,
             # Series resistor on V_PROG ADC for isolation (compensated via ADC input impedance)
             cv.Optional(CONF_R_SERIES_VPROG, default=47000): cv.resistance,
-            cv.Optional(CONF_DEEP_SLEEP_ID): cv.use_id(deep_sleep.DeepSleepComponent),
+            cv.Required(CONF_BELL_WAKEUP_PIN): pins.internal_gpio_input_pin_schema,
+            cv.Required(
+                CONF_BATTERY_ALERT_WAKEUP_PIN
+            ): pins.internal_gpio_input_pin_schema,
             # Sub-components - Numbers
             cv.Optional(CONF_VINDPM_THRESHOLD): VINDPM_THRESHOLD_SCHEMA,
-            cv.Optional(CONF_SLEEP_DURATION): SLEEP_DURATION_SCHEMA,
             # Sub-components - Switches
             cv.Optional(CONF_CHARGING_ENABLED): CHARGING_ENABLED_SCHEMA,
             cv.Optional(CONF_CHARGE_DISABLE): CHARGE_DISABLE_SCHEMA,
@@ -194,7 +186,7 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_CHARGING): CHARGING_SCHEMA,
         }
     )
-    .extend(cv.polling_component_schema("never"))  # Manual/wakeup triggered
+    .extend(cv.polling_component_schema("60s"))
     .extend(i2c.i2c_device_schema(0x28))  # Default I2C address for ISL23315
 )
 
@@ -214,9 +206,9 @@ async def to_code(config):
     cg.add(var.set_r_prog(config[CONF_R_PROG]))
     cg.add(var.set_r_series_vprog(config[CONF_R_SERIES_VPROG]))
 
-    if CONF_DEEP_SLEEP_ID in config:
-        deep_sleep_var = await cg.get_variable(config[CONF_DEEP_SLEEP_ID])
-        cg.add(var.set_deep_sleep(deep_sleep_var))
+    for key in (CONF_BELL_WAKEUP_PIN, CONF_BATTERY_ALERT_WAKEUP_PIN):
+        pin = await cg.gpio_pin_expression(config[key])
+        cg.add(getattr(var, f"set_{key}")(pin))
 
     # Configure hardware pins
     if CONF_CHARGE_DISABLE_PIN in config:
@@ -245,19 +237,6 @@ async def to_code(config):
         await cg.register_component(num, conf)
         cg.add(num.set_parent(var))
         cg.add(var.set_vindpm_threshold_number(num))
-
-    # Configure sleep duration number
-    if CONF_SLEEP_DURATION in config:
-        conf = config[CONF_SLEEP_DURATION]
-        num = await number.new_number(
-            conf,
-            min_value=30.0,
-            max_value=3600.0,
-            step=30.0,
-        )
-        await cg.register_component(num, conf)
-        cg.add(num.set_parent(var))
-        cg.add(var.set_sleep_duration_number(num))
 
     # Configure charging enabled switch
     if CONF_CHARGING_ENABLED in config:
