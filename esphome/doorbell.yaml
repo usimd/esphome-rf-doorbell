@@ -1,5 +1,11 @@
 # ESP32-C6 intercom: always-connected Thread SED with automatic light sleep.
 # Requires ESPHome 2026.11.0b3 (see requirements.txt).
+substitutions:
+  # After an accepted bell press, poll fast for a short window so HA users and
+  # automations can open the door without waiting out a long (e.g. nightly) poll.
+  ring_answer_poll_ms: "500"
+  ring_answer_window: 20s
+
 esphome:
   name: esphome-rf-doorbell
   friendly_name: Doorbell
@@ -8,8 +14,7 @@ esphome:
     priority: -100
     then:
       # Template numbers publish restored values without running set_action.
-      - openthread.set_poll_period:
-          poll_period: !lambda 'return static_cast<uint32_t>(id(thread_poll_period).state * 1000);'
+      - script.execute: apply_poll_period
       - binary_sensor.template.publish:
           id: bell_signal
           state: false
@@ -71,23 +76,24 @@ ota:
       - globals.set:
           id: ota_active
           value: 'true'
-      - openthread.set_poll_period:
-          poll_period: 0s
+      - script.execute: apply_poll_period
     on_error:
       - globals.set:
           id: ota_active
           value: 'false'
-      - openthread.set_poll_period:
-          poll_period: !lambda 'return static_cast<uint32_t>(id(thread_poll_period).state * 1000);'
+      - script.execute: apply_poll_period
     on_abort:
       - globals.set:
           id: ota_active
           value: 'false'
-      - openthread.set_poll_period:
-          poll_period: !lambda 'return static_cast<uint32_t>(id(thread_poll_period).state * 1000);'
+      - script.execute: apply_poll_period
 
 globals:
   - id: ota_active
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: ring_window_active
     type: bool
     restore_value: false
     initial_value: 'false'
@@ -108,7 +114,7 @@ number:
     set_action:
       - if:
           condition:
-            lambda: 'return !id(ota_active);'
+            lambda: 'return !id(ota_active) && !id(ring_window_active);'
           then:
             - openthread.set_poll_period:
                 poll_period: !lambda 'return static_cast<uint32_t>(x * 1000);'
@@ -295,6 +301,30 @@ text_sensor:
       disabled_by_default: true
 
 script:
+  # Single source of truth for the Thread poll period:
+  # OTA -> receive-on, ring answer window -> fast poll, otherwise the configured number.
+  - id: apply_poll_period
+    mode: queued
+    then:
+      - openthread.set_poll_period:
+          poll_period: !lambda |-
+            if (id(ota_active)) return 0;
+            if (id(ring_window_active)) return ${ring_answer_poll_ms};
+            return static_cast<uint32_t>(id(thread_poll_period).state * 1000);
+
+  - id: ring_answer_fast_poll
+    mode: restart
+    then:
+      - globals.set:
+          id: ring_window_active
+          value: 'true'
+      - script.execute: apply_poll_period
+      - delay: ${ring_answer_window}
+      - globals.set:
+          id: ring_window_active
+          value: 'false'
+      - script.execute: apply_poll_period
+
   - id: handle_doorbell_press
     mode: single
     then:
@@ -302,6 +332,7 @@ script:
           condition:
             lambda: 'return id(charger_controller).accept_bell_press();'
           then:
+            - script.execute: ring_answer_fast_poll
             - binary_sensor.template.publish:
                 id: bell_signal
                 state: true

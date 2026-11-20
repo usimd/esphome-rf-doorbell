@@ -39,6 +39,11 @@ check HA's ESPHome integration for the device's new address if it does not recon
 - **Thread Poll Period** is restored, defaults to 5 seconds and accepts 1-60 seconds.
   Try 2-3 seconds if incoming commands feel slow. Polling is not a hard end-to-end
   latency guarantee: network retries and TCP can add delay.
+- After an accepted bell press the device polls every 500 ms for 20 s (fixed), so
+  HA users or automations can open the door promptly even with a long (e.g. nightly
+  60 s) poll period. A new ring restarts the window; afterwards the configured
+  period returns.
+  Poll-period changes during the window take effect when it ends.
 - Supply voltage and charge current update every minute; battery percentage every
   20 minutes. Battery alerts also request a fuel-gauge update and clear alert flags.
 - Outbound bell events transmit immediately when HA is connected. Offline events
@@ -64,7 +69,8 @@ delete obsolete entries from HA's entity registry if they remain after migration
 Native ESPHome OTA switches to receive-on (`openthread.set_poll_period: 0s`) when
 transfer begins, restores the selected poll period on error/abort, and restores
 it on boot after a successful update. Changing the number during OTA records the
-requested value without taking the receiver out of OTA mode.
+requested value without taking the receiver out of OTA mode. OTA receive-on takes
+precedence over the ring answer window.
 
 ## Hardware validation still required
 
