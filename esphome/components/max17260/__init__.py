@@ -32,6 +32,7 @@ CONF_TIME_TO_EMPTY = "time_to_empty"
 CONF_TIME_TO_FULL = "time_to_full"
 CONF_DEVICE_NAME = "device_name"
 CONF_SERIAL_NUMBER = "serial_number"
+CONF_RSENSE = "rsense"
 
 UNIT_MILLIAMPERE_HOUR = "mAh"
 
@@ -44,6 +45,10 @@ CONFIG_SCHEMA = (
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(MAX17260Component),
+            # Current-sense shunt; the datasheet range is 1mΩ to 1000mΩ.
+            cv.Optional(CONF_RSENSE, default=0.015): cv.All(
+                cv.resistance, cv.Range(min=0.001, max=1.0)
+            ),
             cv.Optional(CONF_VOLTAGE): sensor.sensor_schema(
                 unit_of_measurement=UNIT_VOLT,
                 accuracy_decimals=3,
@@ -128,6 +133,7 @@ async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
     await i2c.register_i2c_device(var, config)
+    cg.add(var.set_rsense(config[CONF_RSENSE]))
 
     if CONF_VOLTAGE in config:
         sens = await sensor.new_sensor(config[CONF_VOLTAGE])

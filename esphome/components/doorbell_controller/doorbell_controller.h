@@ -12,6 +12,8 @@
 #ifdef USE_ESP32
 #include "esp_sleep.h"
 #include "esp_adc/adc_oneshot.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
 #include "driver/gpio.h"
 #endif
 
@@ -102,6 +104,7 @@ class BellMuteSwitch : public switch_::Switch, public Component {
 class DoorbellControllerComponent : public PollingComponent, public i2c::I2CDevice {
  public:
   void setup() override;
+  void loop() override;
   void update() override;
   void dump_config() override;
   float get_setup_priority() const override { return setup_priority::DATA; }
@@ -120,9 +123,6 @@ class DoorbellControllerComponent : public PollingComponent, public i2c::I2CDevi
   
   // LTC4079 R_PROG for charge current calculation
   void set_r_prog(float r_prog) { r_prog_ = r_prog; }
-  
-  // Series resistor on V_PROG ADC input for isolation/compensation
-  void set_r_series_vprog(float r_series) { r_series_vprog_ = r_series; }
   
   // Hardware pins
   void set_charge_disable_pin(GPIOPin *pin) { charge_disable_pin_ = pin; }
@@ -209,10 +209,6 @@ class DoorbellControllerComponent : public PollingComponent, public i2c::I2CDevi
   // LTC4079 R_PROG for charge current calculation
   float r_prog_{30000.0f};    // R11 in schematic (30k) -> I_CHG = 250 * V_PROG / R_PROG
   
-  // Series resistor on V_PROG ADC input for isolation
-  // Forms voltage divider with ADC input impedance (~2MΩ for ESP32 at 12dB atten)
-  float r_series_vprog_{47000.0f};  // 47k series resistor
-  
   // Hardware pins
   GPIOPin *charge_disable_pin_{nullptr};
   GPIOPin *supply_sense_enable_pin_{nullptr};
@@ -242,7 +238,20 @@ class DoorbellControllerComponent : public PollingComponent, public i2c::I2CDevi
   void update_power_sensors_();
   
 #ifdef USE_ESP32
-  float read_adc_voltage_(uint8_t pin);
+  struct AdcChannel {
+    adc_channel_t channel;
+    adc_cali_handle_t cali{nullptr};
+  };
+  bool setup_adc_();
+  bool setup_adc_channel_(uint8_t pin, AdcChannel &out);
+  float read_adc_voltage_(const AdcChannel &ch);
+  static void gpio_wake_isr_(DoorbellControllerComponent *self);
+
+  adc_oneshot_unit_handle_t adc_handle_{nullptr};
+  AdcChannel supply_adc_{};
+  AdcChannel vprog_adc_{};
+  uint8_t bell_gpio_{0};
+  uint8_t battery_alert_gpio_{0};
 #endif
 };
 

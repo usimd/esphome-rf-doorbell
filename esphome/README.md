@@ -29,7 +29,9 @@ Use USB-UART for the initial migration, with physical recovery available:
 .venv/bin/esphome run esphome/doorbell.yaml --device /dev/ttyUSB0
 ```
 
-Select the actual serial port. Ensure Home Assistant and the build machine can
+Select the actual serial port. UART logging is disabled (`baud_rate: 0`) to save
+power; flashing over USB-UART still works and logs remain available over the API.
+Ensure Home Assistant and the build machine can
 reach the Thread network over IPv6 through the border router. After migration,
 check HA's ESPHome integration for the device's new address if it does not reconnect.
 
@@ -54,9 +56,21 @@ check HA's ESPHome integration for the device's new address if it does not recon
   an uncleared alert from continuously waking the CPU.
 
 GPIO wake and normal GPIO interrupts share their trigger type in ESP-IDF. The two
-GPIO binary sensors therefore use polling, not edge ISRs: a level wakes the CPU
-and the resumed main loop samples it. Keep the default main-loop interval during
-bring-up; increasing it could miss short bell pulses.
+GPIO binary sensors therefore poll, and the controller attaches a level interrupt
+with the same wake level to the bell and battery-alert pins. The interrupt masks
+itself and wakes the component phase immediately, so `loop_interval: 1000ms` does
+not delay bell detection. Pulses shorter than the wake-to-sample latency (a few ms)
+can still be missed. `api: batch_delay: 0ms` keeps entity updates from waiting for
+the next 1 s component pass.
+
+- **Thread TX Power** (config, restored, -15 to 20 dBm) applies at runtime. Lower it
+  in steps while watching **Thread Parent Link Quality Out** (keep 3) and
+  **Thread TX Retries** (should not climb); **Thread Parent RSSI** shows the
+  downlink. These update every 10 minutes.
+- The MAX17260 `rsense` option must match R10 (15 mΩ fitted). Changing it makes the
+  gauge re-run EZ configuration on the next boot.
+- Supply voltage and V_PROG use ESP-IDF curve-fitting ADC calibration with 32-sample
+  averaging.
 
 The obsolete HA `input_boolean.doorbell_bell_mute_desired` and
 `input_number.doorbell_sleep_duration_desired` helpers are no longer used.

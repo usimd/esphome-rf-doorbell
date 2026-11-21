@@ -45,9 +45,6 @@ CONF_SUPPLY_DIVIDER_RATIO = "supply_divider_ratio"
 # LTC4079 R_PROG resistor for charge current calculation
 CONF_R_PROG = "r_prog"  # R11 in schematic (30k default)
 
-# Series resistor on V_PROG ADC input for isolation
-CONF_R_SERIES_VPROG = "r_series_vprog"  # 47k default
-
 CONF_BELL_WAKEUP_PIN = "bell_wakeup_pin"
 CONF_BATTERY_ALERT_WAKEUP_PIN = "battery_alert_wakeup_pin"
 
@@ -166,8 +163,6 @@ CONFIG_SCHEMA = (
             ),
             # LTC4079 R_PROG for charge current calculation: I_CHG = 250 * V_PROG / R_PROG
             cv.Optional(CONF_R_PROG, default=30000): cv.resistance,
-            # Series resistor on V_PROG ADC for isolation (compensated via ADC input impedance)
-            cv.Optional(CONF_R_SERIES_VPROG, default=47000): cv.resistance,
             cv.Required(CONF_BELL_WAKEUP_PIN): pins.internal_gpio_input_pin_schema,
             cv.Required(
                 CONF_BATTERY_ALERT_WAKEUP_PIN
@@ -204,7 +199,6 @@ async def to_code(config):
     cg.add(var.set_digipot_resistance(config[CONF_DIGIPOT_RESISTANCE]))
     cg.add(var.set_supply_divider_ratio(config[CONF_SUPPLY_DIVIDER_RATIO]))
     cg.add(var.set_r_prog(config[CONF_R_PROG]))
-    cg.add(var.set_r_series_vprog(config[CONF_R_SERIES_VPROG]))
 
     for key in (CONF_BELL_WAKEUP_PIN, CONF_BATTERY_ALERT_WAKEUP_PIN):
         pin = await cg.gpio_pin_expression(config[key])

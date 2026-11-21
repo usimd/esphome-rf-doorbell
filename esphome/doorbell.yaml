@@ -10,11 +10,17 @@ esphome:
   name: esphome-rf-doorbell
   friendly_name: Doorbell
   min_version: 2026.11.0b3
+  # Components only poll once per second unless woken: the bell/alert GPIO
+  # interrupts, API sockets and the scheduler all wake the loop immediately.
+  loop_interval: 1000ms
+  includes:
+    - thread_tx_power.h
   on_boot:
     priority: -100
     then:
       # Template numbers publish restored values without running set_action.
       - script.execute: apply_poll_period
+      - lambda: 'doorbell::apply_thread_tx_power(static_cast<int8_t>(id(thread_tx_power).state));'
       - binary_sensor.template.publish:
           id: bell_signal
           state: false
@@ -46,6 +52,7 @@ openthread:
   device_type: MTD
   tlv: !secret thread_tlv
   poll_period: 5s
+  # Boot default only; the "Thread TX Power" number overrides it at runtime.
   output_power: 20
 
 power_management:
@@ -56,8 +63,8 @@ power_management:
 
 logger:
   level: INFO
-  baud_rate: 115200
-  hardware_uart: UART0
+  # Logs still reach HA over the API; the UART only costs power.
+  baud_rate: 0
 
 time:
   - platform: homeassistant
@@ -66,6 +73,9 @@ time:
 api:
   # Preserve physical outputs during a border-router/HA outage.
   reboot_timeout: 0s
+  # Batches flush only in the component phase, which loop_interval delays;
+  # state changes are rare, so send them immediately.
+  batch_delay: 0ms
   encryption:
     key: !secret doorbell_api_encryption_key
 
@@ -118,6 +128,23 @@ number:
           then:
             - openthread.set_poll_period:
                 poll_period: !lambda 'return static_cast<uint32_t>(x * 1000);'
+
+  # Lower this while watching "Thread Parent Link Quality Out" and
+  # "Thread TX Retries"; keep link quality at 3 with headroom.
+  - platform: template
+    id: thread_tx_power
+    name: "Thread TX Power"
+    entity_category: config
+    unit_of_measurement: dBm
+    min_value: -15
+    max_value: 20
+    step: 1
+    initial_value: 20
+    restore_value: true
+    optimistic: true
+    update_interval: never
+    set_action:
+      - lambda: 'doorbell::apply_thread_tx_power(static_cast<int8_t>(x));'
 
 external_components:
   - source:
@@ -225,9 +252,27 @@ doorbell_controller:
 max17260:
   id: fuel_gauge
   address: 0x36
+  # Must match R10; the gauge re-initializes when this changes.
+  rsense: 15mOhm
   update_interval: 20min
   state_of_charge:
     name: "Battery Percentage"
+  voltage:
+    name: "Battery Voltage"
+  current:
+    name: "Battery Current"
+
+sensor:
+  - platform: openthread_info
+    parent_average_rssi:
+      name: "Thread Parent RSSI"
+      update_interval: 10min
+    parent_link_quality_out:
+      name: "Thread Parent Link Quality Out"
+      update_interval: 10min
+    tx_retries:
+      name: "Thread TX Retries"
+      update_interval: 10min
 
 binary_sensor:
   - platform: template
