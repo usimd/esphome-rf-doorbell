@@ -7,11 +7,14 @@
 #include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/number/number.h"
-#include "esphome/components/deep_sleep/deep_sleep_component.h"
+#include "bell_wakeup.h"
+#include "thread_tx_power.h"
 
 #ifdef USE_ESP32
 #include "esp_sleep.h"
 #include "esp_adc/adc_oneshot.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
 #include "driver/gpio.h"
 #endif
 
@@ -41,20 +44,6 @@ static const float CHARGE_CURRENT_THRESHOLD = 1.0f; // mA - above this = chargin
 // VINDPM Threshold Number Component
 // =============================================================================
 class VINDPMThresholdNumber : public number::Number, public Component {
- public:
-  void set_parent(DoorbellControllerComponent *parent) { this->parent_ = parent; }
-  void setup() override;
-  void dump_config() override;
-  
- protected:
-  void control(float value) override;
-  DoorbellControllerComponent *parent_{nullptr};
-};
-
-// =============================================================================
-// Sleep Duration Number Component
-// =============================================================================
-class SleepDurationNumber : public number::Number, public Component {
  public:
   void set_parent(DoorbellControllerComponent *parent) { this->parent_ = parent; }
   void setup() override;
@@ -102,13 +91,10 @@ class BellMuteSwitch : public switch_::Switch, public Component {
   void setup() override;
   void dump_config() override;
   float get_setup_priority() const override { return setup_priority::HARDWARE; }
-  void on_safe_shutdown() override;
 
  protected:
   void write_state(bool state) override;
   void apply_output_(bool state);
-  void enable_hold_();
-  void release_hold_(bool state);
 
   InternalGPIOPin *pin_{nullptr};
 };
@@ -119,7 +105,8 @@ class BellMuteSwitch : public switch_::Switch, public Component {
 class DoorbellControllerComponent : public PollingComponent, public i2c::I2CDevice {
  public:
   void setup() override;
-  void update() override;  // Called on wakeup / periodic
+  void loop() override;
+  void update() override;
   void dump_config() override;
   float get_setup_priority() const override { return setup_priority::DATA; }
 
@@ -138,23 +125,21 @@ class DoorbellControllerComponent : public PollingComponent, public i2c::I2CDevi
   // LTC4079 R_PROG for charge current calculation
   void set_r_prog(float r_prog) { r_prog_ = r_prog; }
   
-  // Series resistor on V_PROG ADC input for isolation/compensation
-  void set_r_series_vprog(float r_series) { r_series_vprog_ = r_series; }
-  
   // Hardware pins
   void set_charge_disable_pin(GPIOPin *pin) { charge_disable_pin_ = pin; }
   void set_supply_sense_enable_pin(GPIOPin *pin) { supply_sense_enable_pin_ = pin; }
   void set_supply_adc_pin(uint8_t pin) { supply_adc_pin_ = pin; }
   void set_vprog_adc_pin(uint8_t pin) { vprog_adc_pin_ = pin; }
   
-  // Deep sleep reference
-  void set_deep_sleep(deep_sleep::DeepSleepComponent *deep_sleep) { deep_sleep_ = deep_sleep; }
+  void set_bell_wakeup_pin(InternalGPIOPin *pin) { bell_wakeup_pin_ = pin; }
+  void set_battery_alert_wakeup_pin(InternalGPIOPin *pin) { battery_alert_wakeup_pin_ = pin; }
+  bool accept_bell_press();
+  void refresh_wakeup_sources();
 
   // =============================================================================
   // Sub-component Setters
   // =============================================================================
   void set_vindpm_threshold_number(VINDPMThresholdNumber *num) { vindpm_threshold_number_ = num; }
-  void set_sleep_duration_number(SleepDurationNumber *num) { sleep_duration_number_ = num; }
   void set_charging_enabled_switch(ChargingEnabledSwitch *sw) { charging_enabled_switch_ = sw; }
   void set_charge_disable_switch(ChargeDisableSwitch *sw) { charge_disable_switch_ = sw; }
   void set_wiper_value_sensor(sensor::Sensor *sensor) { wiper_value_sensor_ = sensor; }
@@ -213,33 +198,6 @@ class DoorbellControllerComponent : public PollingComponent, public i2c::I2CDevi
    */
   bool is_charging();
 
-  // =============================================================================
-  // Sleep Duration Control
-  // =============================================================================
-  
-  /**
-   * Set deep sleep duration
-   * @param seconds Sleep duration in seconds
-   */
-  void set_sleep_duration(uint32_t seconds);
-  
-  /**
-   * Get current sleep duration setting
-   * @return Sleep duration in seconds
-   */
-  uint32_t get_sleep_duration() const { return sleep_duration_; }
-
-  // =============================================================================
-  // Deep Sleep / Wakeup Handling
-  // =============================================================================
-  
-#ifdef USE_ESP32
-  static esp_sleep_wakeup_cause_t get_wakeup_cause();
-  static uint64_t get_ext1_wakeup_pins();
-  static uint64_t get_gpio_wakeup_pins();
-  static bool is_gpio_wakeup(uint8_t gpio);
-#endif
-
  protected:
   // VINDPM voltage divider configuration
   float r_high_{820000.0f};   // R5 in schematic (820k)
@@ -252,23 +210,19 @@ class DoorbellControllerComponent : public PollingComponent, public i2c::I2CDevi
   // LTC4079 R_PROG for charge current calculation
   float r_prog_{30000.0f};    // R11 in schematic (30k) -> I_CHG = 250 * V_PROG / R_PROG
   
-  // Series resistor on V_PROG ADC input for isolation
-  // Forms voltage divider with ADC input impedance (~2MΩ for ESP32 at 12dB atten)
-  float r_series_vprog_{47000.0f};  // 47k series resistor
-  
   // Hardware pins
   GPIOPin *charge_disable_pin_{nullptr};
   GPIOPin *supply_sense_enable_pin_{nullptr};
   uint8_t supply_adc_pin_{0};  // GPIO0 default
   uint8_t vprog_adc_pin_{1};   // GPIO1 default
   
-  // Deep sleep reference
-  deep_sleep::DeepSleepComponent *deep_sleep_{nullptr};
-  uint32_t sleep_duration_{300};  // Match the firmware deep_sleep default
+  InternalGPIOPin *bell_wakeup_pin_{nullptr};
+  InternalGPIOPin *battery_alert_wakeup_pin_{nullptr};
+  BellWakeup bell_wakeup_;
+  bool wakeup_sources_ready_{false};
 
   // Sub-components
   VINDPMThresholdNumber *vindpm_threshold_number_{nullptr};
-  SleepDurationNumber *sleep_duration_number_{nullptr};
   ChargingEnabledSwitch *charging_enabled_switch_{nullptr};
   ChargeDisableSwitch *charge_disable_switch_{nullptr};
   sensor::Sensor *wiper_value_sensor_{nullptr};
@@ -285,7 +239,20 @@ class DoorbellControllerComponent : public PollingComponent, public i2c::I2CDevi
   void update_power_sensors_();
   
 #ifdef USE_ESP32
-  float read_adc_voltage_(uint8_t pin);
+  struct AdcChannel {
+    adc_channel_t channel;
+    adc_cali_handle_t cali{nullptr};
+  };
+  bool setup_adc_();
+  bool setup_adc_channel_(uint8_t pin, AdcChannel &out);
+  float read_adc_voltage_(const AdcChannel &ch);
+  static void gpio_wake_isr_(DoorbellControllerComponent *self);
+
+  adc_oneshot_unit_handle_t adc_handle_{nullptr};
+  AdcChannel supply_adc_{};
+  AdcChannel vprog_adc_{};
+  uint8_t bell_gpio_{0};
+  uint8_t battery_alert_gpio_{0};
 #endif
 };
 

@@ -17,10 +17,15 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install esphome
+          pip install -r esphome/requirements.txt
           export DOORBELL_API_ENCRYPTION_KEY=$(openssl rand 32 | base64 -)
           export DOORBELL_OTA_PASSWORD=$(uuidgen)
           envsubst < .github/workflows/secrets-ci.yaml > esphome/secrets.yaml
+
+      - name: Test bell wakeup cooldown
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -I. tests/test_bell_wakeup.cpp -o /tmp/bell-wakeup-test
+          /tmp/bell-wakeup-test
 
       - name: Run ESPHome build
         working-directory: esphome

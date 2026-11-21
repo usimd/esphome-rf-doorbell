@@ -5,6 +5,8 @@
 #ifdef USE_ESP32
 #include "esp_sleep.h"
 #include "esp_adc/adc_oneshot.h"
+#include "hal/gpio_ll.h"
+#include "soc/gpio_struct.h"
 #endif
 
 namespace esphome {
@@ -12,12 +14,43 @@ namespace doorbell_controller {
 
 static const char *const TAG = "doorbell_controller";
 
+// Averaging suppresses the C6 SAR noise; each oneshot conversion takes tens of µs.
+static const int ADC_SAMPLES = 32;
+
 // =============================================================================
 // DoorbellControllerComponent Implementation
 // =============================================================================
 
 void DoorbellControllerComponent::setup() {
   ESP_LOGCONFIG(TAG, "Setting up Doorbell Controller...");
+
+  // The GPIO binary sensors already configured these inputs at HARDWARE priority.
+  if (esp_sleep_enable_gpio_wakeup() != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to enable light-sleep GPIO wakeup");
+    this->mark_failed();
+    return;
+  }
+#ifdef USE_ESP32
+  // The binary sensors only poll in the component phase, which runs every
+  // loop_interval. The level interrupt pulls that phase forward on a wake.
+  // Attach as edge: ESPHome enables the interrupt before registering the
+  // handler, and an unhandled asserted level would retrigger forever.
+  // refresh_wakeup_sources() switches to the wake level afterwards.
+  this->bell_gpio_ = this->bell_wakeup_pin_->get_pin();
+  this->battery_alert_gpio_ = this->battery_alert_wakeup_pin_->get_pin();
+  this->bell_wakeup_pin_->attach_interrupt(&DoorbellControllerComponent::gpio_wake_isr_, this,
+                                           gpio::INTERRUPT_ANY_EDGE);
+  this->battery_alert_wakeup_pin_->attach_interrupt(&DoorbellControllerComponent::gpio_wake_isr_, this,
+                                                    gpio::INTERRUPT_ANY_EDGE);
+#endif
+  this->wakeup_sources_ready_ = true;
+  this->refresh_wakeup_sources();
+
+#ifdef USE_ESP32
+  if (!this->setup_adc_()) {
+    this->status_set_warning(LOG_STR("ADC setup failed"));
+  }
+#endif
 
   // Initialize charge disable pin if configured
   if (this->charge_disable_pin_ != nullptr) {
@@ -46,8 +79,23 @@ void DoorbellControllerComponent::setup() {
   }
 }
 
+void DoorbellControllerComponent::loop() {
+  // Re-arm after the ISR masked the wake pins; reading the live level makes
+  // this self-correcting for glitches the binary sensors never observe.
+  this->refresh_wakeup_sources();
+  this->disable_loop();
+}
+
+#ifdef USE_ESP32
+void IRAM_ATTR DoorbellControllerComponent::gpio_wake_isr_(DoorbellControllerComponent *self) {
+  // Level interrupts retrigger until masked.
+  gpio_ll_intr_disable(&GPIO, self->bell_gpio_);
+  gpio_ll_intr_disable(&GPIO, self->battery_alert_gpio_);
+  self->enable_loop_soon_any_context();
+}
+#endif
+
 void DoorbellControllerComponent::update() {
-  // Called on wakeup or periodic update - read power state
   this->update_power_sensors_();
 }
 
@@ -58,10 +106,10 @@ void DoorbellControllerComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  Supply Divider Ratio: %.1f", this->supply_divider_ratio_);
   ESP_LOGCONFIG(TAG, "  R_PROG: %.0fΩ (max charge current: %.1fmA)", 
                 this->r_prog_, 250.0f * LTC4079_VEN_THRESHOLD / this->r_prog_ * 1000.0f);
-  ESP_LOGCONFIG(TAG, "  R_SERIES_VPROG: %.0fΩ (ADC isolation resistor)", this->r_series_vprog_);
   ESP_LOGCONFIG(TAG, "  Current wiper: %d (VINDPM: %.2fV)", 
                 this->current_wiper_, this->wiper_to_voltage(this->current_wiper_));
-  ESP_LOGCONFIG(TAG, "  Sleep Duration: %ds", this->sleep_duration_);
+  LOG_PIN("  Bell Wakeup Pin: ", this->bell_wakeup_pin_);
+  LOG_PIN("  Battery Alert Wakeup Pin: ", this->battery_alert_wakeup_pin_);
   
   if (this->charge_disable_pin_ != nullptr) {
     LOG_PIN("  Charge Disable Pin: ", this->charge_disable_pin_);
@@ -71,6 +119,11 @@ void DoorbellControllerComponent::dump_config() {
   }
   ESP_LOGCONFIG(TAG, "  Supply ADC Pin: GPIO%d", this->supply_adc_pin_);
   ESP_LOGCONFIG(TAG, "  V_PROG ADC Pin: GPIO%d", this->vprog_adc_pin_);
+#ifdef USE_ESP32
+  ESP_LOGCONFIG(TAG, "  ADC calibration: supply=%s, V_PROG=%s",
+                this->supply_adc_.cali != nullptr ? "curve fitting" : "NONE",
+                this->vprog_adc_.cali != nullptr ? "curve fitting" : "NONE");
+#endif
 }
 
 // =============================================================================
@@ -188,43 +241,73 @@ void DoorbellControllerComponent::set_charge_override(bool disable) {
 // =============================================================================
 
 #ifdef USE_ESP32
-float DoorbellControllerComponent::read_adc_voltage_(uint8_t pin) {
-  // Use ESP-IDF ADC oneshot driver for accurate reading
-  adc_oneshot_unit_handle_t adc_handle;
+bool DoorbellControllerComponent::setup_adc_() {
   adc_oneshot_unit_init_cfg_t init_config = {
-    .unit_id = ADC_UNIT_1,
-    .ulp_mode = ADC_ULP_MODE_DISABLE,
+      .unit_id = ADC_UNIT_1,
+      .ulp_mode = ADC_ULP_MODE_DISABLE,
   };
-  
-  if (adc_oneshot_new_unit(&init_config, &adc_handle) != ESP_OK) {
+  if (adc_oneshot_new_unit(&init_config, &this->adc_handle_) != ESP_OK) {
     ESP_LOGE(TAG, "Failed to initialize ADC unit");
-    return NAN;
+    this->adc_handle_ = nullptr;
+    return false;
   }
-  
+  bool ok = this->setup_adc_channel_(this->supply_adc_pin_, this->supply_adc_);
+  ok &= this->setup_adc_channel_(this->vprog_adc_pin_, this->vprog_adc_);
+  return ok;
+}
+
+bool DoorbellControllerComponent::setup_adc_channel_(uint8_t pin, AdcChannel &out) {
+  adc_unit_t unit;
+  adc_channel_t channel;
+  if (adc_oneshot_io_to_channel(pin, &unit, &channel) != ESP_OK || unit != ADC_UNIT_1) {
+    ESP_LOGE(TAG, "GPIO%d is not an ADC1 pin", pin);
+    return false;
+  }
   adc_oneshot_chan_cfg_t chan_config = {
-    .atten = ADC_ATTEN_DB_12,  // Full 0-3.3V range
-    .bitwidth = ADC_BITWIDTH_12,
+      .atten = ADC_ATTEN_DB_12,
+      .bitwidth = ADC_BITWIDTH_DEFAULT,
   };
-  
-  // Map GPIO to ADC channel (ESP32-C6 specific)
-  adc_channel_t channel = static_cast<adc_channel_t>(pin);
-  
-  if (adc_oneshot_config_channel(adc_handle, channel, &chan_config) != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to configure ADC channel");
-    adc_oneshot_del_unit(adc_handle);
+  if (adc_oneshot_config_channel(this->adc_handle_, channel, &chan_config) != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to configure ADC channel for GPIO%d", pin);
+    return false;
+  }
+  out.channel = channel;
+
+  adc_cali_curve_fitting_config_t cali_config = {};
+  cali_config.unit_id = ADC_UNIT_1;
+  cali_config.chan = channel;
+  cali_config.atten = ADC_ATTEN_DB_12;
+  cali_config.bitwidth = ADC_BITWIDTH_DEFAULT;
+  esp_err_t err = adc_cali_create_scheme_curve_fitting(&cali_config, &out.cali);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "ADC calibration unavailable for GPIO%d (%s), readings uncalibrated", pin, esp_err_to_name(err));
+    out.cali = nullptr;
+  }
+  return true;
+}
+
+float DoorbellControllerComponent::read_adc_voltage_(const AdcChannel &ch) {
+  if (this->adc_handle_ == nullptr) {
     return NAN;
   }
-  
-  int raw_value;
-  if (adc_oneshot_read(adc_handle, channel, &raw_value) != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to read ADC");
-    adc_oneshot_del_unit(adc_handle);
-    return NAN;
+  int32_t sum = 0;
+  for (int i = 0; i < ADC_SAMPLES; i++) {
+    int raw;
+    if (adc_oneshot_read(this->adc_handle_, ch.channel, &raw) != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to read ADC");
+      return NAN;
+    }
+    sum += raw;
   }
+  int raw_avg = (sum + ADC_SAMPLES / 2) / ADC_SAMPLES;
 
-  adc_oneshot_del_unit(adc_handle);
-
-  return (static_cast<float>(raw_value) / 4095.0f) * 3.3f;
+  if (ch.cali != nullptr) {
+    int mv;
+    if (adc_cali_raw_to_voltage(ch.cali, raw_avg, &mv) == ESP_OK) {
+      return mv / 1000.0f;
+    }
+  }
+  return (static_cast<float>(raw_avg) / 4095.0f) * 3.3f;
 }
 #endif
 
@@ -240,7 +323,7 @@ float DoorbellControllerComponent::read_supply_voltage() {
   delay(1);  // Allow settling
   
   // Read ADC
-  float adc_voltage = this->read_adc_voltage_(this->supply_adc_pin_);
+  float adc_voltage = this->read_adc_voltage_(this->supply_adc_);
   
   // Disable voltage divider to save power
   this->supply_sense_enable_pin_->digital_write(false);
@@ -261,20 +344,9 @@ float DoorbellControllerComponent::read_supply_voltage() {
 
 float DoorbellControllerComponent::read_vprog_voltage() {
 #ifdef USE_ESP32
-  float adc_voltage = this->read_adc_voltage_(this->vprog_adc_pin_);
-  if (std::isnan(adc_voltage)) {
-    return NAN;
-  }
-  
-  // Compensate for voltage divider formed by series resistor and ADC input impedance
-  // ESP32 ADC input impedance at 12dB attenuation is approximately 2MΩ
-  // V_PROG_actual = V_ADC * (R_ADC + R_series) / R_ADC
-  static const float ADC_INPUT_IMPEDANCE = 2000000.0f;  // ~2MΩ
-  float compensation = (ADC_INPUT_IMPEDANCE + this->r_series_vprog_) / ADC_INPUT_IMPEDANCE;
-  float vprog = adc_voltage * compensation;
-  
-  ESP_LOGV(TAG, "V_PROG: ADC=%.3fV, compensated=%.3fV (factor=%.3f)", 
-           adc_voltage, vprog, compensation);
+  // The SAR input draws no DC current, so the 47k series resistor adds no error.
+  float vprog = this->read_adc_voltage_(this->vprog_adc_);
+  ESP_LOGV(TAG, "V_PROG: %.3fV", vprog);
   return vprog;
 #else
   return NAN;
@@ -304,45 +376,49 @@ bool DoorbellControllerComponent::is_charging() {
 }
 
 // =============================================================================
-// Sleep Duration Control
+// Light-Sleep Wakeup
 // =============================================================================
 
-void DoorbellControllerComponent::set_sleep_duration(uint32_t seconds) {
-  this->sleep_duration_ = seconds;
-  
-  if (this->deep_sleep_ != nullptr) {
-    this->deep_sleep_->set_sleep_duration(seconds * 1000);
-    ESP_LOGI(TAG, "Sleep duration set to %ds", seconds);
-  } else {
-    ESP_LOGW(TAG, "Deep sleep component not configured");
-  }
-}
-
-// =============================================================================
-// Deep Sleep / Wakeup Handling
-// =============================================================================
-
-#ifdef USE_ESP32
-esp_sleep_wakeup_cause_t DoorbellControllerComponent::get_wakeup_cause() {
-  return esp_sleep_get_wakeup_cause();
-}
-
-uint64_t DoorbellControllerComponent::get_ext1_wakeup_pins() {
-  return esp_sleep_get_ext1_wakeup_status();
-}
-
-uint64_t DoorbellControllerComponent::get_gpio_wakeup_pins() {
-  return esp_sleep_get_gpio_wakeup_status();
-}
-
-bool DoorbellControllerComponent::is_gpio_wakeup(uint8_t gpio) {
-  if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_EXT1) {
+bool DoorbellControllerComponent::accept_bell_press() {
+  if (!this->bell_wakeup_.accept_press()) {
+    ESP_LOGD(TAG, "Ignoring bell press during 30s cooldown");
     return false;
   }
-  uint64_t wakeup_pins = esp_sleep_get_ext1_wakeup_status();
-  return (wakeup_pins & (1ULL << gpio)) != 0;
+  this->refresh_wakeup_sources();
+  this->set_timeout("bell_cooldown", 30000, [this]() {
+    this->bell_wakeup_.finish_cooldown();
+    this->refresh_wakeup_sources();
+  });
+  return true;
 }
-#endif
+
+void DoorbellControllerComponent::refresh_wakeup_sources() {
+  if (!this->wakeup_sources_ready_)
+    return;
+
+  auto configure = [this](InternalGPIOPin *pin, BellWakeup::Level level) {
+    auto gpio_num = static_cast<gpio_num_t>(pin->get_pin());
+    esp_err_t err;
+    if (level == BellWakeup::DISABLED) {
+      gpio_intr_disable(gpio_num);
+      err = gpio_wakeup_disable(gpio_num);
+    } else {
+      bool high = (level == BellWakeup::HIGH) != pin->is_inverted();
+      // Also sets the interrupt type, so the ISR fires on the same level.
+      err = gpio_wakeup_enable(gpio_num, high ? GPIO_INTR_HIGH_LEVEL : GPIO_INTR_LOW_LEVEL);
+      if (err == ESP_OK)
+        err = gpio_intr_enable(gpio_num);
+    }
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to configure GPIO%d wakeup: %s", pin->get_pin(), esp_err_to_name(err));
+      this->status_set_error(LOG_STR("GPIO wakeup configuration failed"));
+    }
+  };
+  configure(this->bell_wakeup_pin_, this->bell_wakeup_.wake_level(this->bell_wakeup_pin_->digital_read()));
+  // An asserted alert must not prevent sleep if the gauge cannot clear it.
+  configure(this->battery_alert_wakeup_pin_,
+            this->battery_alert_wakeup_pin_->digital_read() ? BellWakeup::LOW : BellWakeup::HIGH);
+}
 
 // =============================================================================
 // Internal Helpers
@@ -396,23 +472,6 @@ void VINDPMThresholdNumber::control(float value) {
   if (this->parent_->set_vindpm_threshold(value)) {
     this->publish_state(value);
   }
-}
-
-// =============================================================================
-// SleepDurationNumber Implementation
-// =============================================================================
-
-void SleepDurationNumber::setup() {
-  this->publish_state(this->parent_->get_sleep_duration());
-}
-
-void SleepDurationNumber::dump_config() {
-  LOG_NUMBER("", "Sleep Duration", this);
-}
-
-void SleepDurationNumber::control(float value) {
-  this->parent_->set_sleep_duration(static_cast<uint32_t>(value));
-  this->publish_state(value);
 }
 
 // =============================================================================
@@ -475,8 +534,6 @@ void BellMuteSwitch::setup() {
 
   this->pin_->setup();
   this->pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->release_hold_(initial_state);
-
   this->apply_output_(initial_state);
   this->publish_state(initial_state);
 }
@@ -488,21 +545,11 @@ void BellMuteSwitch::dump_config() {
   }
 }
 
-void BellMuteSwitch::on_safe_shutdown() {
-  if (this->pin_ == nullptr) {
-    return;
-  }
-
-  this->apply_output_(this->state);
-  this->enable_hold_();
-}
-
 void BellMuteSwitch::write_state(bool state) {
   if (this->pin_ == nullptr) {
     return;
   }
 
-  this->release_hold_(state);
   this->apply_output_(state);
   this->publish_state(state);
 }
@@ -510,28 +557,6 @@ void BellMuteSwitch::write_state(bool state) {
 void BellMuteSwitch::apply_output_(bool state) {
   this->pin_->pin_mode(gpio::FLAG_OUTPUT);
   this->pin_->digital_write(state);
-}
-
-void BellMuteSwitch::enable_hold_() {
-#ifdef USE_ESP32
-  auto gpio_num = static_cast<gpio_num_t>(this->pin_->get_pin());
-  gpio_hold_en(gpio_num);
-#if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
-  gpio_deep_sleep_hold_en();
-#endif
-#endif
-}
-
-void BellMuteSwitch::release_hold_(bool state) {
-#ifdef USE_ESP32
-#if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
-  gpio_deep_sleep_hold_dis();
-#endif
-  auto gpio_num = static_cast<gpio_num_t>(this->pin_->get_pin());
-  this->pin_->pin_mode(gpio::FLAG_OUTPUT);
-  this->pin_->digital_write(state);
-  gpio_hold_dis(gpio_num);
-#endif
 }
 
 }  // namespace doorbell_controller

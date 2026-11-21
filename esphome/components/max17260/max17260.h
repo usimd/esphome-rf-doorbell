@@ -147,16 +147,16 @@ static const uint16_t MODELCFG_VCHG_BIT = 0x0400;     // VChg bit (bit 10) - set
 
 // Scaling factors from datasheet Table 3
 static const float VCELL_SCALE = 0.078125e-3f;         // 78.125µV per LSB
-static const float CURRENT_SCALE = 1.5625e-6f / 0.015f; // 1.5625μV/RSENSE, RSENSE=15mΩ -> 104.1667μA per LSB
-static const float CAPACITY_SCALE = (5.0e-6f / 0.015f) * 1000.0f;  // 5μVh/RSENSE, RSENSE=15mΩ -> 0.3333mAh per LSB
+static const float CURRENT_LSB_V = 1.5625e-6f;         // 1.5625µV/RSENSE per LSB
+static const float CAPACITY_LSB_VH = 5.0e-6f;          // 5µVh/RSENSE per LSB
 static const float PERCENT_SCALE = 1.0f / 256.0f;      // 1/256% per LSB (full 16-bit resolution)
 static const float TIME_SCALE = 5.625f;                // 5.625s per LSB
 static const float TEMP_SCALE = 1.0f / 256.0f;         // 1/256°C per LSB
 static const float CYCLES_SCALE = 1.0f / 100.0f;       // 1% cycle per LSB
 
 // Battery configuration
-static const uint16_t DESIGN_CAP = 990;  // 330mAh / (5μVh/15mΩ) = 990
-static const uint16_t ICHG_TERM = 14;    // 1.5mA × 15mΩ / 1.5625μV = 14.4 ≈ 14 (matches LTC4079 C/10 termination with R_PROG=20kΩ)
+static const float DESIGN_CAPACITY_MAH = 330.0f;
+static const float ICHG_TERM_MA = 1.5f;   // LTC4079 C/10 termination with R_PROG=20kΩ
 static const uint16_t VEMPTY = 0xA561;    // VE=3.3V, VR=3.88V (default for Li-ion)
 
 class MAX17260Component : public PollingComponent, public i2c::I2CDevice {
@@ -176,6 +176,8 @@ class MAX17260Component : public PollingComponent, public i2c::I2CDevice {
   void set_full_capacity_sensor(sensor::Sensor *sensor) { full_capacity_sensor_ = sensor; }
   void set_cycle_count_sensor(sensor::Sensor *sensor) { cycle_count_sensor_ = sensor; }
   
+  void set_rsense(float ohms) { rsense_ = ohms; }
+
   void set_device_name_sensor(text_sensor::TextSensor *sensor) { device_name_sensor_ = sensor; }
   void set_serial_number_sensor(text_sensor::TextSensor *sensor) { serial_number_sensor_ = sensor; }
 
@@ -217,6 +219,12 @@ class MAX17260Component : public PollingComponent, public i2c::I2CDevice {
   bool wait_model_refresh_();
   bool clear_por_bit_();
   
+  float rsense_{0.015f};
+  float current_scale_() const { return CURRENT_LSB_V / this->rsense_; }               // A per LSB
+  float capacity_scale_() const { return CAPACITY_LSB_VH / this->rsense_ * 1000.0f; }  // mAh per LSB
+  uint16_t design_cap_raw_() const;
+  uint16_t ichg_term_raw_() const;
+
   // Monitoring and maintenance
   uint16_t last_cycles_{0};  // For tracking learned parameter saving
   bool initialized_{false};   // Tracks if initialization completed successfully

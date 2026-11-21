@@ -57,10 +57,10 @@
  * 
  * REGISTER UNITS (per UG6597 Tables 3-4):
  * =======================================
- * Capacity: 5.0μVh / RSENSE per LSB (with 15mΩ: 0.3333mAh per LSB)
+ * Capacity: 5.0μVh / RSENSE per LSB
  * SOC: 1/256% per LSB (full 16-bit resolution)
  * Voltage: 1.25mV/16 = 0.078125mV per LSB
- * Current: 1.5625μV / RSENSE per LSB (with 15mΩ: 104.1667μA per LSB)
+ * Current: 1.5625μV / RSENSE per LSB
  * Temperature: 1/256°C per LSB (signed)
  * Time: 5.625s per LSB
  * Cycles: 1% per LSB (0-655.35 range)
@@ -78,7 +78,7 @@
  * BATTERY CONFIGURATION:
  * =====================
  * - Design Capacity: 330mAh
- * - Sense Resistor: 15mΩ
+ * - Sense Resistor: configurable via `rsense` (default 15mΩ)
  * - Charge Termination: 1.5mA (LTC4079 C/10, R_PROG=20kΩ, ~15mA max charge)
  * - Empty Voltage: 3.3V (recovery at 3.88V)
  * - Charge Voltage: 4.2V (standard Li-ion)
@@ -88,6 +88,7 @@
  */
 
 #include "max17260.h"
+#include <cinttypes>
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
@@ -101,10 +102,10 @@ void MAX17260Component::setup() {
   ESP_LOGCONFIG(TAG, "Setting up MAX17260...");
 
   // Preferences must exist before we try to restore learned parameters.
-  // NVS key includes IChgTerm value so learned params are invalidated when
-  // charge-termination calibration changes (e.g. IChgTerm 192→14 fix).
-  this->learned_params_pref_ = global_preferences->make_preference<LearnedParameters>(
-    fnv1_hash("max17260_lp_v2"));
+  // Learned registers are raw values scaled by RSENSE, so the key includes it.
+  char pref_key[32];
+  snprintf(pref_key, sizeof(pref_key), "max17260_lp_v3_%lu", static_cast<unsigned long>(lroundf(this->rsense_ * 1e6f)));
+  this->learned_params_pref_ = global_preferences->make_preference<LearnedParameters>(fnv1_hash(pref_key));
   
   // === STEP 0: Check POR bit (UG6595 Section 2, Step 0) ===
   bool por_set;
@@ -114,24 +115,35 @@ void MAX17260Component::setup() {
     return;
   }
 
+  bool needs_init = por_set;
   if (!por_set) {
+    // DesignCap depends on RSENSE; a mismatch means the shunt or the battery
+    // configuration changed since the gauge was last configured.
+    uint16_t design_cap;
+    if (this->read_register_word_(MAX17260_REG_DESIGNCAP, design_cap) && design_cap != this->design_cap_raw_()) {
+      ESP_LOGW(TAG, "DesignCap mismatch: chip has %u, firmware wants %u - re-running EZ config", design_cap,
+               this->design_cap_raw_());
+      needs_init = true;
+    }
+  }
+
+  if (!needs_init) {
     // Already initialized, skip full EZ config sequence
     ESP_LOGI(TAG, "MAX17260 already initialized (POR bit clear)");
-    
-    // Always ensure IChgTerm matches firmware constant, even without POR.
-    // This covers the case where the constant was corrected (e.g. 192→14)
-    // but the MAX17260 retains the old value in its registers.
+
+    // Always ensure IChgTerm matches the firmware value, even without POR.
     uint16_t current_ichg;
-    if (this->read_register_word_(MAX17260_REG_ICHGTERM, current_ichg) && current_ichg != ICHG_TERM) {
-      ESP_LOGW(TAG, "IChgTerm register mismatch: chip has %d, firmware wants %d - updating", current_ichg, ICHG_TERM);
-      this->write_register_word_(MAX17260_REG_ICHGTERM, ICHG_TERM);
+    if (this->read_register_word_(MAX17260_REG_ICHGTERM, current_ichg) && current_ichg != this->ichg_term_raw_()) {
+      ESP_LOGW(TAG, "IChgTerm register mismatch: chip has %d, firmware wants %d - updating", current_ichg,
+               this->ichg_term_raw_());
+      this->write_register_word_(MAX17260_REG_ICHGTERM, this->ichg_term_raw_());
     }
-    
+
     this->initialized_ = true;
     return;
   }
-  
-  ESP_LOGI(TAG, "Power-on reset detected, performing full initialization per UG6595...");
+
+  ESP_LOGI(TAG, "Performing full initialization per UG6595...");
   
   // === STEP 1: Wait for DNR to clear (UG6595 Section 2, Step 1) ===
   // Must wait while FSTAT.DNR == 1 before proceeding with initialization
@@ -283,9 +295,10 @@ void MAX17260Component::dump_config() {
   }
   
   ESP_LOGCONFIG(TAG, "  Battery Configuration:");
-  ESP_LOGCONFIG(TAG, "    Design Capacity: 330 mAh");
-  ESP_LOGCONFIG(TAG, "    Sense Resistor: 15 mΩ");
-  ESP_LOGCONFIG(TAG, "    Charge Termination: 1.5 mA (LTC4079 C/10 with R_PROG=20kΩ)");
+  ESP_LOGCONFIG(TAG, "    Design Capacity: %.0f mAh (raw %u)", DESIGN_CAPACITY_MAH, this->design_cap_raw_());
+  ESP_LOGCONFIG(TAG, "    Sense Resistor: %.1f mΩ (current LSB %.2f µA)", this->rsense_ * 1000.0f,
+                this->current_scale_() * 1e6f);
+  ESP_LOGCONFIG(TAG, "    Charge Termination: %.1f mA (raw %u)", ICHG_TERM_MA, this->ichg_term_raw_());
   
   LOG_SENSOR("  ", "Voltage", this->voltage_sensor_);
   LOG_SENSOR("  ", "Current", this->current_sensor_);
@@ -328,13 +341,12 @@ void MAX17260Component::update() {
     }
   }
   
-  // Read and publish current (datasheet: 1.5625μV/RSENSE per LSB, RSENSE=15mΩ)
+  // Read and publish current (datasheet: 1.5625μV/RSENSE per LSB, signed)
   if (this->current_sensor_ != nullptr) {
     uint16_t raw_current;
     if (this->read_register_word_(MAX17260_REG_AVGCURRENT, raw_current)) {
-      // Signed 16-bit value: 1.5625μV / 15mΩ = 0.1041667mA = 0.0001041667A per LSB
       int16_t signed_current = static_cast<int16_t>(raw_current);
-      float current = signed_current * CURRENT_SCALE;
+      float current = signed_current * this->current_scale_();
       this->current_sensor_->publish_state(current);
       ESP_LOGD(TAG, "Current: %.4f A (raw 0x%04X = %d)", current, raw_current, signed_current);
     }
@@ -355,7 +367,7 @@ void MAX17260Component::update() {
   if (this->remaining_capacity_sensor_ != nullptr) {
     uint16_t raw_repcap;
     if (this->read_register_word_(MAX17260_REG_REPCAP, raw_repcap)) {
-      float capacity = raw_repcap * CAPACITY_SCALE;  // 5μVh/RSENSE, RSENSE=15mΩ -> 0.3333mAh/LSB
+      float capacity = raw_repcap * this->capacity_scale_();
       this->remaining_capacity_sensor_->publish_state(capacity);
       ESP_LOGD(TAG, "Remaining Capacity: %.1f mAh (raw 0x%04X)", capacity, raw_repcap);
     }
@@ -365,7 +377,7 @@ void MAX17260Component::update() {
   if (this->full_capacity_sensor_ != nullptr) {
     uint16_t raw_fullcap;
     if (this->read_register_word_(MAX17260_REG_FULLCAPREP, raw_fullcap)) {
-      float fullcap = raw_fullcap * CAPACITY_SCALE;
+      float fullcap = raw_fullcap * this->capacity_scale_();
       this->full_capacity_sensor_->publish_state(fullcap);
       ESP_LOGD(TAG, "Full Capacity: %.1f mAh (raw 0x%04X)", fullcap, raw_fullcap);
     }
@@ -665,29 +677,31 @@ bool MAX17260Component::restore_hibernate_mode_(uint16_t hib_cfg) {
   return true;
 }
 
+uint16_t MAX17260Component::design_cap_raw_() const {
+  return static_cast<uint16_t>(lroundf(DESIGN_CAPACITY_MAH / this->capacity_scale_()));
+}
+
+uint16_t MAX17260Component::ichg_term_raw_() const {
+  return static_cast<uint16_t>(lroundf(ICHG_TERM_MA * 1e-3f / this->current_scale_()));
+}
+
 bool MAX17260Component::perform_ez_config_(float charge_voltage) {
   // Step 2.1: EZ Config (UG6595 Section 2.1)
   // Write DesignCap, IChgTerm, VEmpty, and ModelCFG
   
   ESP_LOGD(TAG, "Performing EZ Config...");
   
-  // Write DesignCap (330mAh battery with 15mΩ sense resistor)
-  // LSB = 5.0μVh/RSENSE = 5.0μVh/0.015Ω = 0.3333mAh
-  // DesignCap = 330mAh / 0.3333mAh = 990
-  if (!this->write_register_word_(MAX17260_REG_DESIGNCAP, DESIGN_CAP)) {
+  if (!this->write_register_word_(MAX17260_REG_DESIGNCAP, this->design_cap_raw_())) {
     ESP_LOGE(TAG, "Failed to write DesignCap");
     return false;
   }
-  ESP_LOGD(TAG, "  DesignCap = %d (330mAh)", DESIGN_CAP);
-  
-  // Write IChgTerm (20mA charge termination current)
-  // LSB = 1.5625μV/RSENSE = 1.5625μV/0.015Ω = 104.1667μA
-  // IChgTerm = 20mA / 0.1041667mA = 192
-  if (!this->write_register_word_(MAX17260_REG_ICHGTERM, ICHG_TERM)) {
+  ESP_LOGD(TAG, "  DesignCap = %u (%.0f mAh)", this->design_cap_raw_(), DESIGN_CAPACITY_MAH);
+
+  if (!this->write_register_word_(MAX17260_REG_ICHGTERM, this->ichg_term_raw_())) {
     ESP_LOGE(TAG, "Failed to write IChgTerm");
     return false;
   }
-  ESP_LOGD(TAG, "  IChgTerm = %d (1.5mA, LTC4079 C/10)", ICHG_TERM);
+  ESP_LOGD(TAG, "  IChgTerm = %u (%.1f mA)", this->ichg_term_raw_(), ICHG_TERM_MA);
   
   // Write VEmpty (0xA561: VE=3.3V, VR=3.88V per datasheet default)
   if (!this->write_register_word_(MAX17260_REG_VEMPTY, VEMPTY)) {
@@ -803,7 +817,7 @@ bool MAX17260Component::load_learned_parameters_() {
   // Validate checksum
   uint32_t expected_checksum = this->calculate_checksum_(params);
   if (params.checksum != expected_checksum) {
-    ESP_LOGW(TAG, "Learned parameters checksum mismatch (expected 0x%08X, got 0x%08X) - ignoring",
+    ESP_LOGW(TAG, "Learned parameters checksum mismatch (expected 0x%08" PRIX32 ", got 0x%08" PRIX32 ") - ignoring",
              expected_checksum, params.checksum);
     return false;
   }
@@ -883,9 +897,9 @@ bool MAX17260Component::save_learned_parameters_() {
   ESP_LOGD(TAG, "Saving learned parameters to NVS:");
   ESP_LOGD(TAG, "  RCOMP0: 0x%04X", params.rcomp0);
   ESP_LOGD(TAG, "  TempCo: 0x%04X", params.tempco);
-  ESP_LOGD(TAG, "  FullCapRep: 0x%04X (%.1f mAh)", params.fullcaprep, params.fullcaprep * CAPACITY_SCALE);
+  ESP_LOGD(TAG, "  FullCapRep: 0x%04X (%.1f mAh)", params.fullcaprep, params.fullcaprep * this->capacity_scale_());
   ESP_LOGD(TAG, "  Cycles: 0x%04X (%.2f cycles)", params.cycles, params.cycles * CYCLES_SCALE);
-  ESP_LOGD(TAG, "  FullCapNom: 0x%04X (%.1f mAh)", params.fullcapnom, params.fullcapnom * CAPACITY_SCALE);
+  ESP_LOGD(TAG, "  FullCapNom: 0x%04X (%.1f mAh)", params.fullcapnom, params.fullcapnom * this->capacity_scale_());
   ESP_LOGD(TAG, "  Checksum: 0x%08X", params.checksum);
   
   // Save to NVS
