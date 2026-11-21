@@ -8,6 +8,7 @@
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/number/number.h"
 #include "bell_wakeup.h"
+#include "thread_tx_power.h"
 
 #ifdef USE_ESP32
 #include "esp_sleep.h"

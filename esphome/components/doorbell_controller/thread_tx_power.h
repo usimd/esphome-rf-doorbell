@@ -1,15 +1,19 @@
 #pragma once
 
+#include "esphome/core/defines.h"
+
+#ifdef USE_OPENTHREAD
 #include "esphome/components/openthread/openthread.h"
 #include "esphome/core/log.h"
 #include <openthread/platform/radio.h>
 
-namespace doorbell {
+namespace esphome {
+namespace doorbell_controller {
 
 // Stores the power for the stack start-up path and, once the stack runs, applies it live.
 inline void apply_thread_tx_power(int8_t dbm) {
-  using esphome::openthread::InstanceLock;
-  auto *ot = esphome::openthread::global_openthread_component;
+  using openthread::InstanceLock;
+  auto *ot = openthread::global_openthread_component;
   if (ot == nullptr)
     return;
   ot->set_output_power(dbm);
@@ -27,4 +31,7 @@ inline void apply_thread_tx_power(int8_t dbm) {
   ESP_LOGI("thread_tx_power", "Thread TX power %d dBm", dbm);
 }
 
-}  // namespace doorbell
+}  // namespace doorbell_controller
+}  // namespace esphome
+
+#endif  // USE_OPENTHREAD

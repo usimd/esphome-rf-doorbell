@@ -13,14 +13,12 @@ esphome:
   # Components only poll once per second unless woken: the bell/alert GPIO
   # interrupts, API sockets and the scheduler all wake the loop immediately.
   loop_interval: 1000ms
-  includes:
-    - thread_tx_power.h
   on_boot:
     priority: -100
     then:
       # Template numbers publish restored values without running set_action.
       - script.execute: apply_poll_period
-      - lambda: 'doorbell::apply_thread_tx_power(static_cast<int8_t>(id(thread_tx_power).state));'
+      - lambda: 'doorbell_controller::apply_thread_tx_power(static_cast<int8_t>(id(thread_tx_power).state));'
       - binary_sensor.template.publish:
           id: bell_signal
           state: false
@@ -144,7 +142,7 @@ number:
     optimistic: true
     update_interval: never
     set_action:
-      - lambda: 'doorbell::apply_thread_tx_power(static_cast<int8_t>(x));'
+      - lambda: 'doorbell_controller::apply_thread_tx_power(static_cast<int8_t>(x));'
 
 external_components:
   - source:
