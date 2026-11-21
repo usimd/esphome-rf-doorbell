@@ -209,7 +209,11 @@ doorbell_controller:
     id: bell_mute
     name: "Bell Mute"
     restore_mode: RESTORE_DEFAULT_OFF
-    pin: GPIO5
+    pin:
+      number: GPIO5
+      # Latch the PhotoMOS drive through light sleep; without it the mute
+      # relay drops whenever the C6 idles.
+      hold_state: true
   supply_voltage:
     name: "Supply Voltage"
   charge_current:
